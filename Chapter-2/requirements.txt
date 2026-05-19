@@ -1,0 +1,4 @@
+langchain-core>=0.1.0
+langchain-openai>=0.0.5
+httpx>=0.24.0
+ipython>=8.0.0
