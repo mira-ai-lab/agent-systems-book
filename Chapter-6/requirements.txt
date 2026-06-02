@@ -1,0 +1,30 @@
+# Chapter-6 依赖包
+
+# LangChain核心
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-openai>=0.0.5
+langgraph>=0.0.30
+langgraph-supervisor>=0.0.8
+grandalf>=0.8  # LangGraph draw_ascii() 终端 ASCII 图
+
+# 向量数据库和检索
+chromadb>=0.4.0
+rank-bm25>=0.2.2
+jieba>=0.42.1
+
+# HTTP客户端
+httpx>=0.25.0
+
+# 环境变量管理
+python-dotenv>=1.0.0
+
+# 数据处理
+numpy>=1.24.0
+
+# Jupyter（用于运行notebook）
+jupyter>=1.0.0
+ipywidgets>=8.0.0
+
+# 可选： sentence-transformers（如果使用本地嵌入模型）
+# sentence-transformers>=2.2.0
