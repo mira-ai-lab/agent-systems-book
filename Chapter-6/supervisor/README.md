@@ -43,7 +43,7 @@ python test.py
 ## 依赖
 
 ```bash
-pip install langgraph-supervisor
+pip install langgraph_demo-supervisor
 ```
 
 ## 交互式单文件入口（推荐）

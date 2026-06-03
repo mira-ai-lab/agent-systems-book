@@ -4,7 +4,7 @@ import asyncio
 
 CHAPTER6 = Path.cwd()  # 若在 Chapter-6 目录
 sys.path.insert(0, str(CHAPTER6))
-sys.path.insert(0, str(CHAPTER6 / "langgraph"))
+sys.path.insert(0, str(CHAPTER6 / "langgraph_demo"))
 
 from orchestrator import LangGraphOrchestrator
 

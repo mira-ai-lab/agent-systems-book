@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
-# 路径 & pip langgraph（防止本地 langgraph/ 目录遮蔽 site-packages）
+# 路径 & pip langgraph_demo（防止本地 langgraph_demo/ 目录遮蔽 site-packages）
 # ---------------------------------------------------------------------------
 SUP_DIR = Path(__file__).resolve().parent
 BOOK_ROOT = SUP_DIR.parent
@@ -42,10 +42,10 @@ if str(SUP_DIR) not in sys.path:
 
 def _import_pip_langgraph(submodule: str = ""):
     saved = sys.path[:]
-    blocked = {str(SUP_DIR), str(BOOK_ROOT / "langgraph")}
+    blocked = {str(SUP_DIR), str(BOOK_ROOT / "langgraph_demo")}
     sys.path[:] = [p for p in sys.path if p not in blocked]
     try:
-        name = f"langgraph.{submodule}" if submodule else "langgraph"
+        name = f"langgraph_demo.{submodule}" if submodule else "langgraph_demo"
         return importlib.import_module(name)
     finally:
         sys.path[:] = saved

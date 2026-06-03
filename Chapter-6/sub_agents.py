@@ -14,13 +14,15 @@ Chapter-6: 子智能体团队实现
 
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# 添加项目根目录到路径
-PROJECT_ROOT = Path(__file__).parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# 添加 supervisor 目录到路径（本地 travel_common / sub_agents）
+SUP_DIR = Path(__file__).resolve().parent
+BOOK_ROOT = SUP_DIR.parent
+if str(SUP_DIR) not in sys.path:
+    sys.path.insert(0, str(SUP_DIR))
 
 import httpx
 from dotenv import load_dotenv
@@ -29,8 +31,6 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 
-# 导入 Chapter-5 的通用工具函数
-sys.path.insert(0, str(PROJECT_ROOT / "Chapter-5"))
 from travel_common import (
     ensure_project_dotenv_loaded,
     fetch_hotels_from_api,
@@ -41,6 +41,7 @@ from travel_common import (
     amap_weather_by_city_and_date,
     norm_text,
     require_non_empty,
+    resolve_relative_date,
     build_itinerary_from_candidates,
 )
 
@@ -64,12 +65,18 @@ def create_llm() -> ChatOpenAI:
     ).rstrip("/")
     model = os.getenv("DASHSCOPE_CHAT_MODEL", "qwen-plus")
     
+    ssl_verify = os.getenv("OPENAI_SSL_VERIFY", "false").lower() not in (
+        "0",
+        "false",
+        "no",
+    )
     return ChatOpenAI(
         model=model,
         temperature=0,
         api_key=api_key,
         base_url=base_url,
-        http_client=httpx.Client(verify=False)
+        http_client=httpx.Client(verify=ssl_verify),
+        http_async_client=httpx.AsyncClient(verify=ssl_verify),
     )
 
 
@@ -84,7 +91,7 @@ async def get_weather(city: str, date: str) -> Dict[str, Any]:
     
     Args:
         city: 城市名称（如"上海"、"北京"）
-        date: 日期（格式：YYYY-MM-DD）
+        date: 日期，支持 YYYY-MM-DD，或相对词：今天/明天/后天
     
     Returns:
         包含天气信息的字典
@@ -92,49 +99,55 @@ async def get_weather(city: str, date: str) -> Dict[str, Any]:
     ok, err = require_non_empty(city, "city")
     if not ok:
         return {"error": err}
+
+    norm_date, derr = resolve_relative_date(date)
+    if derr:
+        return {"error": derr}
     
     # 优先使用高德天气API，回退到wttr.in
     try:
-        result = await amap_weather_by_city_and_date(city, date)
-        if not result.get("error"):
-            return {
+        result = await amap_weather_by_city_and_date(city, norm_date)
+        return {
                 "city": city,
-                "date": date,
+                "date": norm_date,
                 "forecast": result["forecast"],
                 "data_source": "amap_weather"
-            }
+        }
     except Exception:
         pass
     
     # 回退方案
     try:
-        result = await wttr_weather_by_city_and_date(city, date)
-        if not result.get("error"):
-            return {
+        result = await wttr_weather_by_city_and_date(city, norm_date)
+        return {
                 "city": city,
-                "date": date,
+                "date": norm_date,
                 "text": result.get("text"),
                 "forecast": result.get("forecast"),
                 "data_source": "wttr.in"
-            }
+        }
     except Exception as e:
         return {"error": f"weather_query_failed: {str(e)}"}
     
     return {"error": "无法获取天气信息"}
 
 
-WEATHER_AGENT_SYSTEM_PROMPT = """你是专业的天气查询助手。
+def _weather_agent_system_prompt() -> str:
+    today = datetime.now().strftime("%Y-%m-%d")
+    return f"""你是专业的天气查询助手。
+
+当前日期（本地时间）：{today}
 
 职责：
 1. 只能使用 get_weather 工具查询天气
 2. city 和 date 参数必填
 3. 返回天气信息后，用简洁友好的语言总结给用户
 4. 如果用户询问多日天气，分别调用工具查询每一天
-5. 非天气相关问题，回复：我只能协助天气查询
+5. 若当前消息已是明确的天气子任务（含具体城市与日期），专注完成查询；不要因为原始需求里曾提到机票/行程而拒绝
 
 注意：
-- date 必须是 YYYY-MM-DD 格式
-- 如果用户说"明天"、"后天"等相对时间，需要转换为具体日期
+- date 可传 YYYY-MM-DD，或直接传「今天」「明天」「后天」（工具会自动换算）
+- 用户说「今天」时必须对应当前日期 {today}，不要臆造其他日期
 """
 
 
@@ -144,7 +157,7 @@ def create_weather_agent() -> Any:
     agent = create_agent(
         llm,
         tools=[get_weather],
-        system_prompt=WEATHER_AGENT_SYSTEM_PROMPT,
+        system_prompt=_weather_agent_system_prompt(),
         checkpointer=MemorySaver()
     )
     return agent
@@ -304,19 +317,23 @@ async def recommend_hotel(
         "preferences": pref or None,
         "budget_cny_per_night_max": budget_cny_per_night_max,
         "hotels": hotels,
+        "count": len(hotels),
         "data_source": source,
-        "note": "请结合 preferences 与 hotels 选一家。",
+        "note": "请结合 preferences 与 hotels 推荐 3–5 家最合适的，并说明各自特点。",
     }
 
 
 HOTEL_AGENT_SYSTEM_PROMPT = """你是酒店推荐助手，只能通过工具 recommend_hotel 查酒店。
 
 规则：
-1. city 必填。
-2. preferences 只填「地图能搜的关键词」：区名、景点、地标、酒店品牌（如 近景区、平城区、希尔顿）。
+1. city 必填；有预算时传入 budget_cny_per_night_max。
+2. preferences 只填「地图能搜的关键词」：区名、景点、地标、酒店品牌（如 西湖、平城区、希尔顿）。
    不要填主观感受（安静、舒适、性价比）——这些留给你读 hotels 后再判断。
-3. 工具返回 hotels 后，结合用户全部诉求，只推荐最合适的一家。
-4. 非酒店问题，回复：我只能协助酒店推荐。
+3. 工具返回 hotels 后，结合用户全部诉求，推荐 3–5 家最合适的酒店（按匹配度排序）。
+   每家需包含：名称、地址/位置、参考价格、评分（如有）、1 句推荐理由。
+   若用户明确要求「只推荐一家」，则只输出 1 家。
+4. 若 hotels 为空或不足 3 家，如实说明并给出已有选项或调整建议（放宽预算/扩大范围）。
+5. 非酒店问题，回复：我只能协助酒店推荐。
 """
 
 
@@ -475,7 +492,11 @@ async def search_flights(
     return {"error": "无法获取航班信息"}
 
 
-FLIGHT_AGENT_SYSTEM_PROMPT = """你是专业的航班查询助手。
+def _flight_agent_system_prompt() -> str:
+    today = datetime.now().strftime("%Y-%m-%d")
+    return f"""你是专业的航班查询助手。
+
+当前日期（本地时间）：{today}
 
 职责：
 1. 只能使用 search_flights 工具查询航班
@@ -488,6 +509,7 @@ FLIGHT_AGENT_SYSTEM_PROMPT = """你是专业的航班查询助手。
 - date 必须是 YYYY-MM-DD 格式
 - 城市名会自动转换为机场代码（支持常见城市）
 - 建议使用机场三字码（如PVG、PEK）以获得更准确的结果
+- 用户说「今天」时必须对应当前日期 {today}，不要臆造其他日期
 """
 
 
@@ -497,7 +519,7 @@ def create_flight_agent() -> Any:
     agent = create_agent(
         llm,
         tools=[search_flights],
-        system_prompt=FLIGHT_AGENT_SYSTEM_PROMPT,
+        system_prompt=_flight_agent_system_prompt(),
         checkpointer=MemorySaver()
     )
     return agent
@@ -572,7 +594,11 @@ async def plan_itinerary(
         return {"error": f"itinerary_planning_failed: {str(e)}"}
 
 
-ITINERARY_AGENT_SYSTEM_PROMPT = """你是专业的行程规划助手。
+def _itinerary_agent_system_prompt() -> str:
+    today = datetime.now().strftime("%Y-%m-%d")
+    return f"""你是专业的行程规划助手。
+
+当前日期（本地时间）：{today}
 
 职责：
 1. 只能使用 plan_itinerary 工具生成行程
@@ -587,6 +613,7 @@ ITINERARY_AGENT_SYSTEM_PROMPT = """你是专业的行程规划助手。
 - 每天安排2-3个主要景点，避免过于紧凑
 - 预留用餐时间和休息时间
 - 考虑天气因素给出出行建议
+- 用户说「今天」时必须对应当前日期 {today}，不要臆造其他日期
 """
 
 
@@ -596,7 +623,7 @@ def create_itinerary_agent() -> Any:
     agent = create_agent(
         llm,
         tools=[plan_itinerary],
-        system_prompt=ITINERARY_AGENT_SYSTEM_PROMPT,
+        system_prompt=_itinerary_agent_system_prompt(),
         checkpointer=MemorySaver()
     )
     return agent

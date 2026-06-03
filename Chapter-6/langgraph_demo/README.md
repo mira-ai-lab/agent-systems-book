@@ -34,7 +34,7 @@ graph TD
 **只看图结构（无需 API Key）：**
 
 ```bash
-cd Chapter-6/langgraph
+cd Chapter-6/langgraph_demo
 python show_graph.py
 ```
 
@@ -61,7 +61,7 @@ from pathlib import Path
 
 CHAPTER6 = Path.cwd()  # 若在 Chapter-6 目录
 sys.path.insert(0, str(CHAPTER6))
-sys.path.insert(0, str(CHAPTER6 / "langgraph"))
+sys.path.insert(0, str(CHAPTER6 / "langgraph_demo"))
 
 from orchestrator import LangGraphOrchestrator
 

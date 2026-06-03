@@ -1,4 +1,4 @@
-"""Supervisor 版中心智能体 — 与 langgraph/ 功能等价（动态调度模式）"""
+"""Supervisor 版中心智能体 — 与 langgraph_demo/ 功能等价（动态调度模式）"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""模块加载：优先 supervisor/ 本地，避免遮蔽 pip langgraph 包"""
+"""模块加载：优先 supervisor/ 本地，避免遮蔽 pip langgraph_demo 包"""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def import_pip_langgraph(submodule: str = "") -> ModuleType:
     saved = sys.path[:]
     sys.path[:] = [p for p in sys.path if Path(p).resolve() != SUP_DIR.resolve()]
     try:
-        name = f"langgraph.{submodule}" if submodule else "langgraph"
+        name = f"langgraph_demo.{submodule}" if submodule else "langgraph_demo"
         return importlib.import_module(name)
     finally:
         sys.path[:] = saved

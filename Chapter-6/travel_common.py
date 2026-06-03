@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 import time
 import urllib.parse
 from dataclasses import dataclass
@@ -33,6 +34,95 @@ def parse_exact_date(date_str: str) -> Tuple[Optional[str], Optional[str]]:
         return dt.strftime("%Y-%m-%d"), None
     except ValueError:
         return None, "date must be an exact YYYY-MM-DD string."
+
+
+_RELATIVE_DATE_OFFSETS = (
+    ("大后天", 3),
+    ("后天", 2),
+    ("明天", 1),
+    ("明日", 1),
+    ("今天", 0),
+    ("今日", 0),
+    ("tomorrow", 1),
+    ("today", 0),
+)
+
+
+def resolve_relative_date(
+    date_str: str,
+    ref: Optional[datetime] = None,
+) -> Tuple[Optional[str], Optional[str]]:
+    """将 YYYY-MM-DD 或相对日期（今天/明天/后天等）转为标准日期。"""
+    s = norm_text(date_str)
+    if not s:
+        return None, "date is required (YYYY-MM-DD or 今天/明天/后天)."
+
+    exact, _ = parse_exact_date(s)
+    if exact:
+        return exact, None
+
+    low = s.lower()
+    for keyword, offset in _RELATIVE_DATE_OFFSETS:
+        if keyword in low or low == keyword:
+            base = ref or datetime.now()
+            return (base + timedelta(days=offset)).strftime("%Y-%m-%d"), None
+
+    return None, (
+        f"unsupported date expression: {date_str!r} "
+        "(use YYYY-MM-DD or 今天/明天/后天)."
+    )
+
+
+def resolve_trip_dates_from_query(
+    query: str,
+    ref: Optional[datetime] = None,
+) -> List[str]:
+    """从用户话术中解析出行日期列表（支持下周、N 天、YYYY-MM-DD）。"""
+    ref = ref or datetime.now()
+    explicit = re.findall(r"\d{4}-\d{2}-\d{2}", query)
+    if explicit:
+        return explicit
+
+    n_days = 3
+    md = re.search(r"(\d+)\s*天", query)
+    if md:
+        n_days = max(1, int(md.group(1)))
+
+    if "下下周" in query:
+        days_ahead = (7 - ref.weekday()) % 7 + 7
+    elif "下周" in query or "下礼拜" in query:
+        days_ahead = (7 - ref.weekday()) % 7
+        if days_ahead == 0:
+            days_ahead = 7
+    else:
+        days_ahead = 1
+
+    start = ref + timedelta(days=days_ahead)
+    return [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(n_days)]
+
+
+def build_trip_date_anchor(
+    query: str,
+    ref: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """生成全链路统一的日期锚定信息（规划 / 子智能体 / 聚合）。"""
+    ref = ref or datetime.now()
+    today = ref.strftime("%Y-%m-%d")
+    trip_dates = resolve_trip_dates_from_query(query, ref)
+    trip_range = (
+        f"{trip_dates[0]} 至 {trip_dates[-1]}" if len(trip_dates) > 1 else trip_dates[0]
+    )
+    anchor_block = (
+        f"[系统日期锚定：今天是 {today}；"
+        f"本请求出行日期为 {trip_range}（{', '.join(trip_dates)}）。"
+        f"所有子任务与最终回复必须使用上述日期，禁止编造 2024 等错误年份。]"
+    )
+    return {
+        "today": today,
+        "trip_dates": trip_dates,
+        "trip_range": trip_range,
+        "anchor_block": anchor_block,
+    }
 
 
 def stable_int(*parts: str) -> int:
@@ -74,7 +164,7 @@ _DOTENV_LOADED = False
 
 def _project_root_dir() -> str:
     # 项目根目录在此文件目录的上两级
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", ".."))
 
 
 def ensure_project_dotenv_loaded() -> None:

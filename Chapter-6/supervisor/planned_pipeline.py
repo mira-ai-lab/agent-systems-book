@@ -1,5 +1,5 @@
 """
-规划流水线：借鉴 Chapter-6/langgraph 的 build_plan + execute_layer 设计。
+规划流水线：借鉴 Chapter-6/langgraph_demo 的 build_plan + execute_layer 设计。
 
 流程：pre_survey → build_plan → 按依赖分层 execute_layer → aggregate
 用于复合旅行请求；单任务仍走 local_supervisor 的 Supervisor handoff。
