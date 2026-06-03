@@ -12,11 +12,11 @@ if sys.platform == "win32":
         except Exception:
             pass
 
-LG_DIR = Path(__file__).resolve().parent
-if str(LG_DIR) not in sys.path:
-    sys.path.insert(0, str(LG_DIR))
+CHAPTER6_DIR = Path(__file__).resolve().parent.parent
+if str(CHAPTER6_DIR) not in sys.path:
+    sys.path.insert(0, str(CHAPTER6_DIR))
 
-from visualize import GraphVisualizer  # noqa: E402
+from fixed_graph.visualize import GraphVisualizer  # noqa: E402
 
 
 def main() -> None:

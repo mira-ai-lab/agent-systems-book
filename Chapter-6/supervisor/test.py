@@ -18,6 +18,10 @@ SUP_DIR = Path(__file__).resolve().parent
 if str(SUP_DIR) not in sys.path:
     sys.path.insert(0, str(SUP_DIR))
 
+import bootstrap  # noqa: E402
+
+bootstrap.setup()
+
 from orchestrator import SupervisorOrchestrator  # noqa: E402
 
 

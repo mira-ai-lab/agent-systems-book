@@ -1,79 +1,71 @@
-# Chapter-6: 中心智能体系统
+# Chapter-6: 旅行多智能体系统
 
-整合 **Chapter-2 / 3 / 4 / 5** 的能力，构建完整的旅行规划中心智能体。
+整合 **Chapter-2 / 3 / 4 / 5** 的能力，提供三种编排方式。
+
+## 目录结构
+
+```
+Chapter-6/
+├── chapter6/              # 路径与 .env 引导（唯一路径来源）
+│   └── paths.py
+├── travel_common.py       # 共享库：API、日期锚定、工具函数
+├── sub_agents.py          # 6 个子智能体
+├── task_planner.py        # Ch2 预调查 + Ch4 拆解
+├── central_orchestrator.py# 顺序编排入口
+├── memory_*.py, prompts.py, aggregation_helpers.py
+├── fixed_graph/           # LangGraph 固定 StateGraph
+├── supervisor/            # Supervisor handoff + 规划流水线
+│   └── book/              # 书籍伪代码案例（不参与运行时）
+└── pyproject.toml
+```
+
+> **注意**：`supervisor/` 下不再复制共享模块；所有编排层统一 import 根目录共享库。
+
+## 安装
+
+```bash
+cd Chapter-6
+pip install -e .
+```
+
+## 三种运行方式
+
+| 模式 | 入口 | 适用场景 |
+|------|------|----------|
+| 顺序编排 | `python central_orchestrator.py` / notebook | 教学、最简单 |
+| 固定图 | `python -m fixed_graph.run_demo` | 显式 StateGraph + 可视化 |
+| Supervisor | `cd supervisor && python local_supervisor.py` | 动态 handoff + 复合任务规划流水线 |
+
+## 环境配置
+
+书仓库根目录或 `Chapter-6/.env`：
+
+- `DASHSCOPE_API_KEY` — 百炼大模型
+- `AMAP_KEY` / `BAIDU_MAP_AK` — 地图 POI（可选）
+
+Chroma 向量库统一目录：`Chapter-6/chroma_memory/`（`chapter6.paths.CHROMA_DIR`）
 
 ## 架构
 
 ```
 用户请求
-  → [Ch2] 思维链预调查（四类事实）
-  → [Ch3] 长期记忆向量检索
+  → [Ch2] 思维链预调查
+  → [Ch3] 长期记忆检索
   → [Ch4] 任务拆解 → 依赖排序
-  → [Ch6] 子任务路由到子智能体
-  → [Ch5+] 6 个子智能体 LangChain Agent 执行
-  → 聚合生成最终回复
-  → [Ch3] 写入新记忆
+  → [Ch5+] 6 个子智能体执行
+  → 聚合 → [Ch3] 写入记忆
 ```
 
-## 文件说明
+## 子智能体
 
-| 文件 | 来源章节 | 职责 |
-|------|----------|------|
-| `prompts.py` | Ch2/3/4/6 | 预调查、记忆、拆解、依赖、路由、中心 system prompt |
-| `memory_system.py` | Ch3 | Chroma 向量检索 + 短期对话缓冲 |
-| `task_planner.py` | Ch2 + Ch4 | 预调查 → 拆解 → 依赖 → Agent 路由 |
-| `sub_agents.py` | Ch5 扩展 | 6 个专业子智能体（LangChain Agent + Tool） |
-| `central_orchestrator.py` | Ch6 | 中心编排器 |
-| `central_agent_demo.ipynb` | 演示 | Jupyter 交互演示 |
+WeatherAgent · AttractionAgent · HotelAgent · RestaurantAgent · FlightAgent · ItineraryAgent
 
-## 子智能体团队（由 Chapter-5 HotelAgent 扩展）
+## 与各章对应
 
-- **WeatherAgent** — 天气查询
-- **AttractionAgent** — 景点推荐
-- **HotelAgent** — 酒店推荐（保留 Ch5 地图关键词/主观偏好分离逻辑）
-- **RestaurantAgent** — 美食推荐
-- **FlightAgent** — 航班查询
-- **ItineraryAgent** — 行程规划
+- **Ch2** — `FACTS_PROMPT` 预调查
+- **Ch3** — `LongTermMemory` 向量检索与写入
+- **Ch4** — 任务拆解、依赖分析、Agent 路由
+- **Ch5** — `SubAgentFactory` + `@tool`
+- **Ch6** — 中心编排（三种模式见上表）
 
-## 环境配置
-
-```bash
-cd Chapter-6
-pip install -r requirements.txt
-```
-
-项目根目录 `.env` 需配置：
-- `DASHSCOPE_API_KEY` — 百炼大模型 + 嵌入
-- `BAIDU_MAP_AK` — 酒店/景点/餐厅（可选）
-
-## 运行
-
-```bash
-python central_orchestrator.py
-```
-
-或打开 `central_agent_demo.ipynb`，从第 0 节顺序运行。
-
-## 与各章对应关系
-
-### Chapter-2 思维链
-- `FACTS_PROMPT` 独立预调查步骤
-- 输出四类事实：已给出 / 需查阅 / 需推导 / 有根据猜测
-
-### Chapter-3 长期记忆
-- `LongTermMemory.search_memories()` 真实向量检索
-- `build_prompt()` 注入记忆上下文
-- 对话结束后 `ingest()` 写入偏好
-
-### Chapter-4 任务拆解
-- `PROMPT_TP_ZH` 按 Agent 团队能力拆解子任务
-- `DEPENDENCY_SYSTEM_PROMPT_ZH` 分析 input/output 依赖并排序
-- `parse_decomposition_response()` 解析 `# 目标` / `# 任务拆解`
-
-### Chapter-5 工具调用
-- 每个子智能体 = `create_agent` + `@tool` + 专属 system prompt
-- 中心编排器通过 `SubAgentFactory` 调用 Agent（非直接 bypass 工具）
-
-### Chapter-6 路由
-- `AGENT_ROUTING_PROMPT` 为每个子任务选择 agent + params
-- 同层无依赖子任务 `asyncio.gather` 并行执行
+详细说明见 `supervisor/README.md`、`fixed_graph/README.md`。

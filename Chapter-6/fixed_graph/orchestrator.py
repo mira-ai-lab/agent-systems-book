@@ -3,31 +3,22 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 import httpx
+from langchain_openai import ChatOpenAI
 
-LG_DIR = Path(__file__).resolve().parent
-CHAPTER6_DIR = LG_DIR.parent
-if str(LG_DIR) not in sys.path:
-    sys.path.insert(0, str(LG_DIR))
+from chapter6.paths import CHROMA_DIR
+from memory_factory import create_long_term_memory, resolve_memory_backend
+from prompts import CENTRAL_AGENT_SYSTEM_PROMPT
 
-load_dotenv(CHAPTER6_DIR.parent / ".env")
+from . import bootstrap
+from .graph import compile_graph
+from .state import CentralAgentState
+from .visualize import GraphVisualizer
 
-from _ch6_loader import load_ch6_module
-from graph import compile_graph
-from state import CentralAgentState
-from visualize import GraphVisualizer
-
-_memory_factory = load_ch6_module("memory_factory")
-_prompts = load_ch6_module("prompts")
-create_long_term_memory = _memory_factory.create_long_term_memory
-resolve_memory_backend = _memory_factory.resolve_memory_backend
-CENTRAL_AGENT_SYSTEM_PROMPT = _prompts.CENTRAL_AGENT_SYSTEM_PROMPT
+bootstrap.setup()
 
 
 class LangGraphOrchestrator:
@@ -57,7 +48,7 @@ class LangGraphOrchestrator:
                     self.long_term_backend,
                     user_id="central_agent_user",
                     llm=self.llm,
-                    persist_directory=str(CHAPTER6_DIR / "chroma_memory"),
+                    persist_directory=str(CHROMA_DIR),
                 )
                 backend_label = (
                     "LangGraph Store"

@@ -1,4 +1,4 @@
-"""Supervisor 版中心智能体 — 与 langgraph_demo/ 功能等价（动态调度模式）"""
+"""Supervisor 版中心智能体 — 与 fixed_graph/ 功能等价（动态调度模式）"""
 
 from __future__ import annotations
 
@@ -8,32 +8,27 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 
 import httpx
-from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 
 SUP_DIR = Path(__file__).resolve().parent
-CHAPTER6_DIR = SUP_DIR.parent
 if str(SUP_DIR) not in sys.path:
     sys.path.insert(0, str(SUP_DIR))
-if str(CHAPTER6_DIR) not in sys.path:
-    sys.path.insert(0, str(CHAPTER6_DIR))
 
-load_dotenv(CHAPTER6_DIR.parent / ".env")
+import bootstrap  # noqa: E402
 
-from _ch6_loader import load_ch6_module
+bootstrap.setup()
+
+from aggregation_helpers import (
+    direct_response_from_results,
+    is_single_direct_response,
+)
 from agents import AGENT_SPECS
+from central_orchestrator import SubAgentRegistry
+from chapter6.paths import CHROMA_DIR
 from memory_factory import LongTermBackend, create_long_term_memory, resolve_memory_backend
 from supervisor_graph import build_supervisor_app
-
-_aggregation = load_ch6_module("aggregation_helpers")
-_central = load_ch6_module("central_orchestrator")
-_planner = load_ch6_module("task_planner")
-
-TaskPlanner = _planner.TaskPlanner
-SubAgentRegistry = _central.SubAgentRegistry
-is_single_direct_response = _aggregation.is_single_direct_response
-direct_response_from_results = _aggregation.direct_response_from_results
+from task_planner import TaskPlanner
 
 
 def _last_ai_content(messages: List[Any]) -> str:
@@ -76,7 +71,7 @@ class SupervisorOrchestrator:
                     self.long_term_backend,
                     user_id="supervisor_user",
                     llm=self.llm,
-                    persist_directory=str(CHAPTER6_DIR / "chroma_memory"),
+                    persist_directory=str(CHROMA_DIR),
                 )
                 backend_label = (
                     "LangGraph Store"

@@ -3,17 +3,17 @@
 
 - 单任务：Supervisor 动态 handoff（演示 Supervisor 模式）
 - 路由：先 TaskPlanner build_plan，子任务 >1 走规划流水线，=1 走 Supervisor
-- 依赖同目录: sub_agents.py, planned_pipeline.py, travel_common.py, .env
+- 依赖: Chapter-6 共享库 + 本目录 planned_pipeline / agents 等
 
 运行:
-    cd supervisor
-    python local_supervisor.py
+    cd Chapter-6
+    python -m supervisor.local_supervisor
+    # 或 cd supervisor && python local_supervisor.py
 """
 
 from __future__ import annotations
 
 import asyncio
-import importlib
 import json
 import os
 import re
@@ -23,11 +23,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# ---------------------------------------------------------------------------
-# 路径 & pip langgraph_demo（防止本地 langgraph_demo/ 目录遮蔽 site-packages）
-# ---------------------------------------------------------------------------
 SUP_DIR = Path(__file__).resolve().parent
-BOOK_ROOT = SUP_DIR.parent
+if str(SUP_DIR) not in sys.path:
+    sys.path.insert(0, str(SUP_DIR))
+
+import bootstrap  # noqa: E402
+
+bootstrap.setup()
 
 if sys.platform == "win32":
     for stream in (sys.stdout, sys.stderr):
@@ -36,39 +38,12 @@ if sys.platform == "win32":
         except Exception:
             pass
 
-if str(SUP_DIR) not in sys.path:
-    sys.path.insert(0, str(SUP_DIR))
-
-
-def _import_pip_langgraph(submodule: str = ""):
-    saved = sys.path[:]
-    blocked = {str(SUP_DIR), str(BOOK_ROOT / "langgraph_demo")}
-    sys.path[:] = [p for p in sys.path if p not in blocked]
-    try:
-        name = f"langgraph_demo.{submodule}" if submodule else "langgraph_demo"
-        return importlib.import_module(name)
-    finally:
-        sys.path[:] = saved
-
-
-_import_pip_langgraph()
-_import_pip_langgraph("_internal")
-
-from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, MessagesState, StateGraph
 from langgraph_supervisor.handoff import create_forward_message_tool, create_handoff_tool
 from langgraph_supervisor.supervisor import create_supervisor
-
-_lg_graph = _import_pip_langgraph("graph")
-_lg_ckpt = _import_pip_langgraph("checkpoint.memory")
-StateGraph = _lg_graph.StateGraph
-MessagesState = _lg_graph.MessagesState
-END = _lg_graph.END
-MemorySaver = _lg_ckpt.MemorySaver
-
-load_dotenv(SUP_DIR / ".env")
-load_dotenv(BOOK_ROOT / ".env")
 
 from sub_agents import SubAgentFactory  # noqa: E402
 from planned_pipeline import PlannedPipeline  # noqa: E402

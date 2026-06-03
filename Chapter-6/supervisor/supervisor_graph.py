@@ -7,19 +7,19 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph_supervisor.handoff import create_handoff_tool
+from langgraph_supervisor.supervisor import create_supervisor
 
 SUP_DIR = Path(__file__).resolve().parent
 if str(SUP_DIR) not in sys.path:
     sys.path.insert(0, str(SUP_DIR))
 
-from _ch6_loader import import_pip_langgraph
+import bootstrap  # noqa: E402
+
+bootstrap.setup()
+
 from agents import AGENT_SPECS, build_all_sub_agent_graphs
-
-from langgraph_supervisor.handoff import create_handoff_tool
-from langgraph_supervisor.supervisor import create_supervisor
-
-_lg_ckpt = import_pip_langgraph("checkpoint.memory")
-MemorySaver = _lg_ckpt.MemorySaver
 
 SUPERVISOR_PROMPT = """你是旅行多智能体调度 Supervisor，负责把用户请求分派给专业子智能体并整合结果。
 

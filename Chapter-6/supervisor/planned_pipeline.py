@@ -1,5 +1,5 @@
 """
-规划流水线：借鉴 Chapter-6/langgraph_demo 的 build_plan + execute_layer 设计。
+规划流水线：借鉴 Chapter-6/fixed_graph 的 build_plan + execute_layer 设计。
 
 流程：pre_survey → build_plan → 按依赖分层 execute_layer → aggregate
 用于复合旅行请求；单任务仍走 local_supervisor 的 Supervisor handoff。
@@ -16,20 +16,25 @@ from typing import Any, Dict, List, Optional
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
-from _ch6_loader import load_ch6_module
+import sys
+from pathlib import Path
+
+_SUP = Path(__file__).resolve().parent
+if str(_SUP) not in sys.path:
+    sys.path.insert(0, str(_SUP))
+import bootstrap  # noqa: E402
+
+bootstrap.setup()
+
+from aggregation_helpers import (
+    direct_response_from_results,
+    is_single_direct_response,
+)
+from central_orchestrator import SubAgentRegistry
+from prompts import AGGREGATION_PROMPT
 from sub_agents import SubAgentFactory
-from travel_common import build_trip_date_anchor
-
-_central = load_ch6_module("central_orchestrator")
-_planner_mod = load_ch6_module("task_planner")
-_agg = load_ch6_module("aggregation_helpers")
-_prompts = load_ch6_module("prompts")
-
-SubAgentRegistry = _central.SubAgentRegistry
-TaskPlanner = _planner_mod.TaskPlanner
-is_single_direct_response = _agg.is_single_direct_response
-direct_response_from_results = _agg.direct_response_from_results
-AGGREGATION_PROMPT = _prompts.AGGREGATION_PROMPT
+from task_planner import TaskPlanner
+from travel_common import build_trip_date_anchor_async
 
 # supervisor 节点名（用于终端日志，与 local_supervisor.AGENT_SPECS 一致）
 _FACTORY_TO_NODE: Dict[str, str] = {
@@ -138,7 +143,7 @@ class PlannedPipeline:
         self.planner = TaskPlanner(llm, SubAgentRegistry())
 
     async def _build_plan_context(self, user_query: str) -> Dict[str, Any]:
-        date_anchor = build_trip_date_anchor(user_query)
+        date_anchor = await build_trip_date_anchor_async(user_query, llm=self.llm)
         enriched_query = f"{user_query.strip()}\n\n{date_anchor['anchor_block']}"
 
         pre_survey = await self.planner.run_pre_survey(enriched_query)

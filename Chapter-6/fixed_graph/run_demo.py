@@ -14,11 +14,10 @@ if sys.platform == "win32":
             pass
 
 CHAPTER6_DIR = Path(__file__).resolve().parent.parent
-LG_DIR = Path(__file__).resolve().parent
-if str(LG_DIR) not in sys.path:
-    sys.path.insert(0, str(LG_DIR))
+if str(CHAPTER6_DIR) not in sys.path:
+    sys.path.insert(0, str(CHAPTER6_DIR))
 
-from orchestrator import LangGraphOrchestrator  # noqa: E402
+from fixed_graph.orchestrator import LangGraphOrchestrator  # noqa: E402
 
 
 async def main() -> None:
@@ -35,7 +34,7 @@ async def main() -> None:
 天气情况和美食攻略。我喜欢住安静的酒店，预算每晚不超过800元。
 """
 
-    result = await orchestrator.process_request(query, thread_id="langgraph_demo")
+    result = await orchestrator.process_request(query, thread_id="fixed_graph")
     print(f"\n子任务数: {len(result.get('subtask_results') or {})}")
     print(f"最终回复长度: {len(result.get('final_response') or '')} 字符")
 

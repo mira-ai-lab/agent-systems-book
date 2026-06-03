@@ -8,18 +8,17 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.graph import END, MessagesState, StateGraph
 
 SUP_DIR = Path(__file__).resolve().parent
 if str(SUP_DIR) not in sys.path:
     sys.path.insert(0, str(SUP_DIR))
 
-from _ch6_loader import import_pip_langgraph
-from sub_agents import SubAgentFactory
+import bootstrap  # noqa: E402
 
-_lg_graph = import_pip_langgraph("graph")
-StateGraph = _lg_graph.StateGraph
-MessagesState = _lg_graph.MessagesState
-END = _lg_graph.END
+bootstrap.setup()
+
+from sub_agents import SubAgentFactory
 
 # supervisor handoff 使用的 agent 名称（snake_case，与 create_handoff_tool 一致）
 AGENT_SPECS = [

@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-LG_DIR = Path(__file__).resolve().parent
-if str(LG_DIR) not in sys.path:
-    sys.path.insert(0, str(LG_DIR))
+from . import bootstrap
 
-DEFAULT_OUTPUT_DIR = LG_DIR / "output"
+bootstrap.setup()
+
+PKG_DIR = Path(__file__).resolve().parent
+DEFAULT_OUTPUT_DIR = PKG_DIR / "output"
 
 
 def compile_graph_for_visualization() -> Any:
     """仅编译图结构，不执行节点（无需有效 API Key）"""
     from langchain_openai import ChatOpenAI
 
-    from graph import build_central_agent_graph
+    from .graph import build_central_agent_graph
 
     llm = ChatOpenAI(
         model="qwen-plus",

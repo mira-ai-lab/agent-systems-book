@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chapter6-travel"
+version = "0.2.0"
+description = "Chapter 6 travel multi-agent systems book demo"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain>=0.1.0",
+    "langchain-core>=0.1.0",
+    "langchain-openai>=0.0.5",
+    "langgraph>=0.0.30",
+    "langgraph-supervisor>=0.0.8",
+    "grandalf>=0.8",
+    "chromadb>=0.4.0",
+    "rank-bm25>=0.2.2",
+    "jieba>=0.42.1",
+    "httpx>=0.25.0",
+    "python-dotenv>=1.0.0",
+    "numpy>=1.24.0",
+    "pydantic>=2.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["chapter6*", "supervisor*", "fixed_graph*"]
+
+[tool.setuptools]
+py-modules = [
+    "travel_common",
+    "sub_agents",
+    "task_planner",
+    "central_orchestrator",
+    "aggregation_helpers",
+    "prompts",
+    "memory_system",
+    "memory_factory",
+]

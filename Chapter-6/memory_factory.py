@@ -59,7 +59,7 @@ def _get_or_create_shared_store() -> Any:
 def resolve_memory_backend(explicit: Optional[str] = None) -> LongTermBackend:
     """解析长期记忆后端：参数 > 环境变量 MEMORY_BACKEND > 默认 chroma"""
     raw = (explicit or os.getenv("MEMORY_BACKEND", "chroma")).lower().strip()
-    if raw in ("store", "langgraph_demo", "langgraph_store"):
+    if raw in ("store", "langgraph_store", "fixed_graph", "langgraph_demo"):
         return "store"
     return "chroma"
 

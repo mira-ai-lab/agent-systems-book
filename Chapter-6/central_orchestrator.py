@@ -7,33 +7,25 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-PROJECT_ROOT = Path(__file__).parent.parent
-CHAPTER6_DIR = Path(__file__).parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-if str(CHAPTER6_DIR) not in sys.path:
-    sys.path.insert(0, str(CHAPTER6_DIR))
-
-from dotenv import load_dotenv
+import httpx
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
-import httpx
 
-from prompts import AGGREGATION_PROMPT, CENTRAL_AGENT_SYSTEM_PROMPT
+from chapter6.paths import CHROMA_DIR, load_project_dotenv
 from aggregation_helpers import (
     MEMORY_AGGREGATION_INSTRUCTION,
     direct_response_from_results,
     is_single_direct_response,
 )
 from memory_system import LongTermMemory
+from prompts import AGGREGATION_PROMPT, CENTRAL_AGENT_SYSTEM_PROMPT
 from task_planner import TaskPlanner
 
-load_dotenv(PROJECT_ROOT / ".env")
+load_project_dotenv()
 
 
 class SubAgentRegistry:
@@ -133,7 +125,7 @@ class CentralOrchestrator:
             try:
                 self.memory_system = LongTermMemory(
                     user_id="central_agent_user",
-                    persist_directory=str(CHAPTER6_DIR / "chroma_memory"),
+                    persist_directory=str(CHROMA_DIR),
                     llm=self.llm,
                 )
                 self._log("✓ 长期记忆系统已启用（Chapter-3）")

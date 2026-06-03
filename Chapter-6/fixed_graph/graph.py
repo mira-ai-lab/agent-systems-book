@@ -2,28 +2,20 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any, Optional
 
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph
 
-LG_DIR = Path(__file__).resolve().parent
-if str(LG_DIR) not in sys.path:
-    sys.path.insert(0, str(LG_DIR))
+from . import bootstrap
 
-from _ch6_loader import import_pip_langgraph, load_ch6_module
-from nodes import GraphContext, has_more_layers, make_nodes
-from state import CentralAgentState
+bootstrap.setup()
 
-_memory = load_ch6_module("memory_system")
-LongTermMemory = _memory.LongTermMemory
+from memory_system import LongTermMemory
 
-_lg_graph = import_pip_langgraph("graph")
-_lg_ckpt = import_pip_langgraph("checkpoint.memory")
-StateGraph = _lg_graph.StateGraph
-END = _lg_graph.END
-MemorySaver = _lg_ckpt.MemorySaver
+from .nodes import GraphContext, has_more_layers, make_nodes
+from .state import CentralAgentState
 
 
 def build_central_agent_graph(
@@ -37,8 +29,6 @@ def build_central_agent_graph(
         pre_survey (预调查阶段) → retrieve_memory (检索记忆) → build_plan (构建计划)
             → execute_layer (执行层 - 循环，按依赖层执行)
             → aggregate (聚合结果) → save_memory (保存记忆) → END (结束)
-
-
     """
     ctx = GraphContext(llm, memory_system)
     nodes = make_nodes(ctx)

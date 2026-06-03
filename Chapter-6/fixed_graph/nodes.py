@@ -4,37 +4,27 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
-from pathlib import Path
 from typing import Any, Dict, List
-
-LG_DIR = Path(__file__).resolve().parent
-if str(LG_DIR) not in sys.path:
-    sys.path.insert(0, str(LG_DIR))
 
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
-from _ch6_loader import load_ch6_module
+from . import bootstrap
 
-_aggregation = load_ch6_module("aggregation_helpers")
+bootstrap.setup()
 
-_central = load_ch6_module("central_orchestrator")
-_prompts = load_ch6_module("prompts")
-_memory = load_ch6_module("memory_system")
-_sub = load_ch6_module("sub_agents")
-_planner = load_ch6_module("task_planner")
+from aggregation_helpers import (
+    MEMORY_AGGREGATION_INSTRUCTION,
+    direct_response_from_results,
+    is_single_direct_response,
+)
+from central_orchestrator import SubAgentRegistry
+from memory_system import LongTermMemory
+from prompts import AGGREGATION_PROMPT
+from sub_agents import SubAgentFactory
+from task_planner import TaskPlanner
 
-is_single_direct_response = _aggregation.is_single_direct_response
-direct_response_from_results = _aggregation.direct_response_from_results
-MEMORY_AGGREGATION_INSTRUCTION = _aggregation.MEMORY_AGGREGATION_INSTRUCTION
-SubAgentRegistry = _central.SubAgentRegistry
-AGGREGATION_PROMPT = _prompts.AGGREGATION_PROMPT
-LongTermMemory = _memory.LongTermMemory
-SubAgentFactory = _sub.SubAgentFactory
-TaskPlanner = _planner.TaskPlanner
-
-from state import CentralAgentState
+from .state import CentralAgentState
 
 
 def _append_log(state: CentralAgentState, message: str) -> List[str]:

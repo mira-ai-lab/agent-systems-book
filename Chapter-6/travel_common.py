@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import httpx
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 
 def norm_text(s: Optional[str]) -> str:
@@ -36,6 +37,8 @@ def parse_exact_date(date_str: str) -> Tuple[Optional[str], Optional[str]]:
         return None, "date must be an exact YYYY-MM-DD string."
 
 
+# ---- 相对日期解析（用于单个日期参数，保留原方案）----
+
 _RELATIVE_DATE_OFFSETS = (
     ("大后天", 3),
     ("后天", 2),
@@ -52,7 +55,11 @@ def resolve_relative_date(
     date_str: str,
     ref: Optional[datetime] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
-    """将 YYYY-MM-DD 或相对日期（今天/明天/后天等）转为标准日期。"""
+    """将 YYYY-MM-DD 或相对日期（今天/明天/后天等）转为标准日期。
+
+    此函数用于工具参数级别的单个日期转换，输入通常是"今天""明天"等简单词。
+    正则方案在此场景下足够可靠，无需 LLM。
+    """
     s = norm_text(date_str)
     if not s:
         return None, "date is required (YYYY-MM-DD or 今天/明天/后天)."
@@ -63,7 +70,7 @@ def resolve_relative_date(
 
     low = s.lower()
     for keyword, offset in _RELATIVE_DATE_OFFSETS:
-        if keyword in low or low == keyword:
+        if keyword in low:
             base = ref or datetime.now()
             return (base + timedelta(days=offset)).strftime("%Y-%m-%d"), None
 
@@ -73,15 +80,29 @@ def resolve_relative_date(
     )
 
 
+# ---- 正则回退方案（保留作为 LLM 解析失败时的兜底）----
+
 def resolve_trip_dates_from_query(
     query: str,
     ref: Optional[datetime] = None,
 ) -> List[str]:
-    """从用户话术中解析出行日期列表（支持下周、N 天、YYYY-MM-DD）。"""
+    """从用户话术中解析出行日期列表（正则回退方案）。
+
+    支持：下周/下礼拜/下下周、N 天、YYYY-MM-DD。
+    当 LLM 解析不可用或失败时作为兜底。
+    """
     ref = ref or datetime.now()
-    explicit = re.findall(r"\d{4}-\d{2}-\d{2}", query)
-    if explicit:
-        return explicit
+    # 正则提取精确日期，并验证合法性
+    explicit_raw = re.findall(r"\d{4}-\d{2}-\d{2}", query)
+    explicit_valid: List[str] = []
+    for d in explicit_raw:
+        try:
+            datetime.strptime(d, "%Y-%m-%d")
+            explicit_valid.append(d)
+        except ValueError:
+            pass
+    if explicit_valid:
+        return explicit_valid
 
     n_days = 3
     md = re.search(r"(\d+)\s*天", query)
@@ -105,10 +126,123 @@ def build_trip_date_anchor(
     query: str,
     ref: Optional[datetime] = None,
 ) -> Dict[str, Any]:
-    """生成全链路统一的日期锚定信息（规划 / 子智能体 / 聚合）。"""
+    """生成全链路统一的日期锚定信息（同步正则回退方案）。"""
     ref = ref or datetime.now()
     today = ref.strftime("%Y-%m-%d")
     trip_dates = resolve_trip_dates_from_query(query, ref)
+    trip_range = (
+        f"{trip_dates[0]} 至 {trip_dates[-1]}" if len(trip_dates) > 1 else trip_dates[0]
+    )
+    anchor_block = (
+        f"[系统日期锚定：今天是 {today}；"
+        f"本请求出行日期为 {trip_range}（{', '.join(trip_dates)}）。"
+        f"所有子任务与最终回复必须使用上述日期，禁止编造 2024 等错误年份。]"
+    )
+    return {
+        "today": today,
+        "trip_dates": trip_dates,
+        "trip_range": trip_range,
+        "anchor_block": anchor_block,
+    }
+
+
+# ---- LLM 日期解析（结构化输出，优先使用）----
+
+
+class TripDateExtraction(BaseModel):
+    """LLM 从用户话术中提取的出行日期信息。"""
+    start_date: str = Field(
+        description="出行起始日期，格式 YYYY-MM-DD，根据今天的日期推算",
+    )
+    duration_days: int = Field(
+        default=3,
+        description="出行天数，默认3天",
+    )
+    trip_dates: List[str] = Field(
+        description="每一天的出行日期列表，每个日期为 YYYY-MM-DD 格式",
+    )
+
+
+_DATE_EXTRACT_PROMPT = """\
+今天是 {today}。
+
+请从以下用户话术中提取出行日期信息。你需要：
+1. 理解用户提到的任何相对日期表达（如"明天"、"后天"、"下周"、"下礼拜"、"大后天"、"6月5号"、"本周末"等）
+2. 根据今天是 {today} 来计算出具体的 YYYY-MM-DD 日期
+3. 确定出行的天数（如果用户说了"N天"、"一周"、"半个月"等，据此计算；否则默认3天）
+4. 生成每一天的出行日期列表
+
+用户话术: {query}
+
+请严格按照 TripDateExtraction 的字段返回结构化数据。"""
+
+
+async def resolve_trip_dates_from_llm(
+    query: str,
+    ref: Optional[datetime] = None,
+    llm: Optional[Any] = None,
+) -> List[str]:
+    """使用 LLM 结构化输出从用户话术中解析出行日期列表。
+
+    优势：能理解"6月5号出发玩3天"、"本周末去杭州"、"下下个礼拜"等
+    正则无法覆盖的自然语言表达。
+
+    如果 LLM 不可用或解析失败，自动回退到正则方案 resolve_trip_dates_from_query。
+    """
+    if llm is None:
+        return resolve_trip_dates_from_query(query, ref)
+
+    ref = ref or datetime.now()
+    today = ref.strftime("%Y-%m-%d")
+
+    try:
+        structured_llm = llm.with_structured_output(TripDateExtraction)
+        prompt = _DATE_EXTRACT_PROMPT.format(today=today, query=query)
+        result: TripDateExtraction = await structured_llm.ainvoke(prompt)
+
+        # 验证返回的日期格式是否合法
+        validated_dates: List[str] = []
+        for d in result.trip_dates:
+            try:
+                datetime.strptime(d, "%Y-%m-%d")
+                validated_dates.append(d)
+            except ValueError:
+                pass
+
+        if validated_dates:
+            return validated_dates
+
+        # LLM 返回的 trip_dates 全部不合法，尝试用 start_date + duration_days 计算
+        try:
+            start = datetime.strptime(result.start_date, "%Y-%m-%d")
+            return [
+                (start + timedelta(days=i)).strftime("%Y-%m-%d")
+                for i in range(max(1, result.duration_days))
+            ]
+        except ValueError:
+            pass
+
+    except Exception as e:
+        print(f"[日期解析] LLM 解析失败，回退到正则方案: {e}", flush=True)
+
+    # 回退到正则方案
+    return resolve_trip_dates_from_query(query, ref)
+
+
+async def build_trip_date_anchor_async(
+    query: str,
+    ref: Optional[datetime] = None,
+    llm: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """生成全链路统一的日期锚定信息（异步版本，优先使用 LLM 解析）。
+
+    如果 LLM 不可用，回退到同步正则方案 build_trip_date_anchor。
+    """
+    ref = ref or datetime.now()
+    today = ref.strftime("%Y-%m-%d")
+
+    trip_dates = await resolve_trip_dates_from_llm(query, ref, llm)
+
     trip_range = (
         f"{trip_dates[0]} 至 {trip_dates[-1]}" if len(trip_dates) > 1 else trip_dates[0]
     )
@@ -163,8 +297,9 @@ _DOTENV_LOADED = False
 
 
 def _project_root_dir() -> str:
-    # 项目根目录在此文件目录的上两级
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", ".."))
+    from chapter6.paths import BOOK_ROOT
+
+    return str(BOOK_ROOT)
 
 
 def ensure_project_dotenv_loaded() -> None:

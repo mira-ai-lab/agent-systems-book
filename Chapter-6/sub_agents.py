@@ -13,26 +13,17 @@ Chapter-6: 子智能体团队实现
 """
 
 import os
-import sys
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# 添加 supervisor 目录到路径（本地 travel_common / sub_agents）
-SUP_DIR = Path(__file__).resolve().parent
-BOOK_ROOT = SUP_DIR.parent
-if str(SUP_DIR) not in sys.path:
-    sys.path.insert(0, str(SUP_DIR))
-
 import httpx
-from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 
+from chapter6.paths import load_project_dotenv
 from travel_common import (
-    ensure_project_dotenv_loaded,
     fetch_hotels_from_api,
     fetch_attractions_from_api,
     fetch_restaurants_from_api,
@@ -44,9 +35,9 @@ from travel_common import (
     resolve_relative_date,
     build_itinerary_from_candidates,
 )
+from weather_mcp import fetch_weather_via_mcp
 
-load_dotenv()
-ensure_project_dotenv_loaded()
+load_project_dotenv()
 
 
 # ============================================================================
@@ -103,29 +94,36 @@ async def get_weather(city: str, date: str) -> Dict[str, Any]:
     norm_date, derr = resolve_relative_date(date)
     if derr:
         return {"error": derr}
-    
-    # 优先使用高德天气API，回退到wttr.in
+
+    # 1) 优先 WeatherAPI MCP（weatherapi-mcp / npx）
+    mcp_result = await fetch_weather_via_mcp(city, norm_date)
+    if mcp_result and not mcp_result.get("error"):
+        return mcp_result
+
+    # 2) 高德天气 API
     try:
         result = await amap_weather_by_city_and_date(city, norm_date)
-        return {
+        if not result.get("error") and result.get("forecast"):
+            return {
                 "city": city,
                 "date": norm_date,
                 "forecast": result["forecast"],
-                "data_source": "amap_weather"
-        }
+                "data_source": "amap_weather",
+            }
     except Exception:
         pass
-    
-    # 回退方案
+
+    # 3) wttr.in 回退
     try:
         result = await wttr_weather_by_city_and_date(city, norm_date)
-        return {
+        if not result.get("error"):
+            return {
                 "city": city,
                 "date": norm_date,
                 "text": result.get("text"),
                 "forecast": result.get("forecast"),
-                "data_source": "wttr.in"
-        }
+                "data_source": "wttr.in",
+            }
     except Exception as e:
         return {"error": f"weather_query_failed: {str(e)}"}
     
@@ -148,6 +146,7 @@ def _weather_agent_system_prompt() -> str:
 注意：
 - date 可传 YYYY-MM-DD，或直接传「今天」「明天」「后天」（工具会自动换算）
 - 用户说「今天」时必须对应当前日期 {today}，不要臆造其他日期
+- 工具查询顺序：WeatherAPI MCP → 高德 → wttr.in（无需关心底层，只调用 get_weather）
 """
 
 
