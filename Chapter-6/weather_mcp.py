@@ -1,4 +1,4 @@
-"""WeatherAPI.com MCP 客户端（weatherapi-mcp / npx stdio）。"""
+"""WeatherAPI.com MCP 客户端（weatherapi-Mcp / npx stdio）。"""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def _drain_stderr(process: subprocess.Popen) -> None:
     if not process.stderr:
         return
     for line in process.stderr:
-        print(f"[weather-mcp stderr] {line.rstrip()}", file=sys.stderr, flush=True)
+        print(f"[weather-Mcp stderr] {line.rstrip()}", file=sys.stderr, flush=True)
 
 
 def _mcp_send(process: subprocess.Popen, message: Dict[str, Any]) -> None:
@@ -56,12 +56,12 @@ def _mcp_read(process: subprocess.Popen) -> Dict[str, Any]:
     assert process.stdout is not None
     line = process.stdout.readline()
     if not line:
-        raise RuntimeError("weatherapi-mcp 进程已关闭")
+        raise RuntimeError("weatherapi-Mcp 进程已关闭")
     return json.loads(line)
 
 
 class WeatherMcpSession:
-    """复用单个 npx weatherapi-mcp 子进程（stdio MCP）。"""
+    """复用单个 npx weatherapi-Mcp 子进程（stdio MCP）。"""
 
     def __init__(self, api_key: str) -> None:
         env = os.environ.copy()
@@ -69,7 +69,7 @@ class WeatherMcpSession:
         # 避免 npx/node 在中文 Windows 下继承错误代码页
         env.setdefault("PYTHONUTF8", "1")
         self._process = subprocess.Popen(
-            "npx -y weatherapi-mcp",
+            "npx -y weatherapi-Mcp",
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -191,7 +191,7 @@ def _normalize_weather_payload(
                 "advice": condition,
             },
             "raw": payload,
-            "data_source": "weatherapi-mcp/current",
+            "data_source": "weatherapi-Mcp/current",
         }
 
     day = _pick_forecast_day(payload, norm_date)
@@ -215,7 +215,7 @@ def _normalize_weather_payload(
             "advice": condition,
         },
         "raw": payload,
-        "data_source": f"weatherapi-mcp/{tool}",
+        "data_source": f"weatherapi-Mcp/{tool}",
     }
 
 
@@ -258,13 +258,13 @@ def fetch_weather_via_mcp_sync(city: str, norm_date: str) -> Dict[str, Any]:
 
 
 async def fetch_weather_via_mcp(city: str, norm_date: str) -> Optional[Dict[str, Any]]:
-    """优先走 weatherapi-mcp；失败返回 None，由调用方回退其他 API。"""
+    """优先走 weatherapi-Mcp；失败返回 None，由调用方回退其他 API。"""
     if not (os.getenv("WEATHERAPI_KEY") or "").strip():
         return None
     try:
         return await asyncio.to_thread(fetch_weather_via_mcp_sync, city, norm_date)
     except Exception as exc:
-        print(f"[weather-mcp] 查询失败，将回退其他数据源: {exc}", flush=True)
+        print(f"[weather-Mcp] 查询失败，将回退其他数据源: {exc}", flush=True)
         return None
 
 

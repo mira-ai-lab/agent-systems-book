@@ -1,0 +1,11 @@
+# HTTP/SSE server for A2AStarletteApplication (starlette + sse-starlette)
+a2a-sdk[http-server]
+click
+httpx
+uvicorn
+python-dotenv
+langchain
+langchain-openai
+langgraph
+pydantic
+

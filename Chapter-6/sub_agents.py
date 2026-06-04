@@ -95,7 +95,7 @@ async def get_weather(city: str, date: str) -> Dict[str, Any]:
     if derr:
         return {"error": derr}
 
-    # 1) 优先 WeatherAPI MCP（weatherapi-mcp / npx）
+    # 1) 优先 WeatherAPI MCP（weatherapi-Mcp / npx）
     mcp_result = await fetch_weather_via_mcp(city, norm_date)
     if mcp_result and not mcp_result.get("error"):
         return mcp_result
