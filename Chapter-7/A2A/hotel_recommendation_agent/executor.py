@@ -2,8 +2,9 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
+from a2a.helpers import new_artifact, new_text_artifact, new_text_message
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.types import (
@@ -14,17 +15,22 @@ from a2a.types import (
     TaskStatusUpdateEvent,
     UnsupportedOperationError,
 )
-from a2a.utils import new_agent_text_message, new_artifact, new_text_artifact
-from a2a.utils.errors import ServerError
 from dotenv import load_dotenv
+from google.protobuf.timestamp_pb2 import Timestamp
 from langchain_openai import ChatOpenAI
 
-from agents.logging_utils import get_executor_logger
+from logging_utils import get_executor_logger
 
-from .agent import HotelRecommendationAgent
+from agent import HotelRecommendationAgent
 
 load_dotenv()
 VALID_STATUSES = {"completed", "input-required", "rejected"}
+
+
+def _proto_timestamp(dt: datetime | None = None) -> Timestamp:
+    ts = Timestamp()
+    ts.FromDatetime(dt or datetime.now(timezone.utc))
+    return ts
 
 
 async def get_status(response: str) -> str:
@@ -39,8 +45,8 @@ One word."""
     try:
         model = ChatOpenAI(
             model=os.getenv("DEPLOYMENT_NAME"),
-            openai_api_key=os.getenv("CHAT_API_KEY"),
-            openai_api_base=os.getenv("CHAT_ENDPOINT"),
+            api_key=os.getenv("CHAT_API_KEY"),
+            base_url=os.getenv("CHAT_ENDPOINT"),
             temperature=0,
         )
         msg = await model.ainvoke([{"role": "user", "content": prompt}])
@@ -93,22 +99,25 @@ class HotelRecommendationAgentExecutor(AgentExecutor):
         t0 = time.perf_counter()
         if not context.message:
             raise Exception("No message provided")
-        current_task_id = context.message.task_id or str(uuid.uuid4())
-        current_context_id = context.message.context_id or str(uuid.uuid4())
-        metadata = context._params.metadata or {}
+        current_task_id = context.message.task_id or context.task_id or str(uuid.uuid4())
+        current_context_id = context.message.context_id or context.context_id or str(uuid.uuid4())
+        metadata = context.metadata or {}
 
         await event_queue.enqueue_event(
             Task(
                 id=current_task_id,
-                contextId=current_context_id,
-                status=TaskStatus(state=TaskState.submitted, timestamp=datetime.now().isoformat()),
+                context_id=current_context_id,
+                status=TaskStatus(
+                    state=TaskState.TASK_STATE_SUBMITTED,
+                    timestamp=_proto_timestamp(),
+                ),
                 history=[context.message],
-                metadata=context._params.metadata,
+                metadata=metadata,
             )
         )
         query = context.get_user_input()
         if not query:
-            await event_queue.enqueue_event(new_agent_text_message("User input is empty."))
+            await event_queue.enqueue_event(new_text_message("User input is empty."))
             return
 
         preview = (query[:200] + "…") if len(query) > 200 else query
@@ -126,24 +135,48 @@ class HotelRecommendationAgentExecutor(AgentExecutor):
                 if first_chunk_at is None:
                     first_chunk_at = time.perf_counter()
             if not is_last:
-                a = new_text_artifact(name="", text=item.content)
-                a.artifact_id = artifact_id
+                a = new_text_artifact(name="", text=item.content, artifact_id=artifact_id)
                 await event_queue.enqueue_event(
-                    TaskArtifactUpdateEvent(contextId=current_context_id, taskId=current_task_id, artifact=a, metadata=metadata, lastChunk=False, append=index != 0)
+                    TaskArtifactUpdateEvent(
+                        context_id=current_context_id,
+                        task_id=current_task_id,
+                        artifact=a,
+                        metadata=metadata,
+                        last_chunk=False,
+                        append=index != 0,
+                    )
                 )
             else:
-                a = new_artifact(parts=[], name="")
+                a = new_artifact(parts=[], name="", artifact_id=artifact_id)
                 if item.content:
-                    a = new_text_artifact(name="", text=item.content)
-                a.artifact_id = artifact_id
+                    a = new_text_artifact(name="", text=item.content, artifact_id=artifact_id)
                 await event_queue.enqueue_event(
-                    TaskArtifactUpdateEvent(contextId=current_context_id, taskId=current_task_id, artifact=a, metadata=metadata, lastChunk=True, append=index != 0)
+                    TaskArtifactUpdateEvent(
+                        context_id=current_context_id,
+                        task_id=current_task_id,
+                        artifact=a,
+                        metadata=metadata,
+                        last_chunk=True,
+                        append=index != 0,
+                    )
                 )
 
         status_str = await get_status(concatenated)
-        task_state = TaskState.input_required if status_str == "input-required" else (getattr(TaskState, "rejected", TaskState.failed) if status_str == "rejected" else (TaskState.completed if status_str == "completed" else TaskState.failed))
+        if status_str == "input-required":
+            task_state = TaskState.TASK_STATE_INPUT_REQUIRED
+        elif status_str == "rejected":
+            task_state = TaskState.TASK_STATE_REJECTED
+        elif status_str == "completed":
+            task_state = TaskState.TASK_STATE_COMPLETED
+        else:
+            task_state = TaskState.TASK_STATE_FAILED
         await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(contextId=current_context_id, taskId=current_task_id, status=TaskStatus(state=task_state, timestamp=datetime.now().isoformat()), final=True, metadata=metadata)
+            TaskStatusUpdateEvent(
+                context_id=current_context_id,
+                task_id=current_task_id,
+                status=TaskStatus(state=task_state, timestamp=_proto_timestamp()),
+                metadata=metadata,
+            )
         )
 
         total_ms = int((time.perf_counter() - t0) * 1000)
@@ -152,12 +185,11 @@ class HotelRecommendationAgentExecutor(AgentExecutor):
             "request_end task_id=%s context_id=%s state=%s total_ms=%s first_chunk_ms=%s emitted_chars=%s",
             current_task_id,
             current_context_id,
-            getattr(task_state, "value", str(task_state)),
+            TaskState.Name(task_state),
             total_ms,
             first_chunk_ms,
             emitted_chars,
         )
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
-        raise ServerError(error=UnsupportedOperationError())
-
+        raise UnsupportedOperationError()

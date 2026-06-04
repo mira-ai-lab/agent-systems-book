@@ -1,5 +1,7 @@
-# HTTP/SSE server for A2AStarletteApplication (starlette + sse-starlette)
-a2a-sdk[http-server]
+# HTTP/SSE server (Starlette + sse-starlette via a2a-sdk[http-server])
+# 1.x: 用 create_jsonrpc_routes + Starlette，A2AStarletteApplication 已移除
+a2a-sdk[http-server]>=1.0.0
+starlette
 click
 httpx
 uvicorn
