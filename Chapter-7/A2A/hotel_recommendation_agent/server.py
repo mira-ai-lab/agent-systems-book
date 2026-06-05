@@ -76,7 +76,13 @@ def _build_app(host: str, port: int) -> Starlette:
     )
     routes = []
     routes.extend(create_agent_card_routes(agent_card))
-    routes.extend(create_jsonrpc_routes(request_handler, rpc_url="/"))
+    routes.extend(
+        create_jsonrpc_routes(
+            request_handler,
+            rpc_url="/",
+            enable_v0_3_compat=True,  # 兼容 supervisor_local 等 v0.3 message/send 客户端
+        )
+    )
     return Starlette(routes=routes)
 
 
