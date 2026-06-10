@@ -1,6 +1,6 @@
 # agent-systems-book
 
-《智能体系统》配套代码仓库：从单 Agent 推理、记忆与任务规划，到多智能体编排，再到 MCP / A2A 远程协作的完整示例。
+《智能体系统》配套代码仓库：从单 Agent 推理、记忆与任务规划，到多智能体编排，MCP / A2A 远程协作，再到 Hermes 自我进化 Agent 的完整示例。
 
 ## 仓库结构
 
@@ -16,9 +16,13 @@ agent-systems-book/
 │   ├── sub_agents.py     # 6 个子智能体
 │   ├── fixed_graph/      # LangGraph 固定 StateGraph 编排
 │   └── supervisor/       # Supervisor handoff 动态调度
-└── Chapter-7/            # 协议化协作
-    ├── A2A/              # Agent-to-Agent（HTTP 远程 Agent + Supervisor）
-    └── Mcp/              # Model Context Protocol（HTTP/SSE 工具服务）
+├── Chapter-7/            # 协议化协作
+│   ├── A2A/              # Agent-to-Agent（HTTP 远程 Agent + Supervisor）
+│   └── Mcp/              # Model Context Protocol（HTTP/SSE 工具服务）
+└── Chapter-10/           # Hermes 自我进化 Agent（技能学习 + LangGraph）
+    ├── Hermes_evolution_langgraph.py   # 完整闭环 + SubAgent
+    ├── book/             # 书稿简化版（langgraph_evolu.py 等）
+    └── my_agent_memory/  # 运行时技能库与热记忆（可删后重跑）
 ```
 
 ## 各章内容概览
@@ -32,8 +36,9 @@ agent-systems-book/
 | **Chapter-6** | 6 子智能体 + 三种编排模式 | 见下方「Chapter-6 快速开始」 |
 | **Chapter-7 A2A** | 远程 Agent 协议 + Supervisor 调度 | `A2A/supervisor_local.py` |
 | **Chapter-7 MCP** | 酒店工具 MCP Server（SSE） | `Mcp/hotel_mcp_server.py` |
+| **Chapter-10** | Hermes 自我进化：技能抽取 / skill_view / patch | `Hermes_evolution_langgraph.py` |
 
-Chapter-6 整合了前几章能力，是全书的主线 demo；Chapter-7 在相同业务能力上演示 **MCP 工具化** 与 **A2A 服务化** 两种对外协作方式。
+Chapter-6 整合了前几章能力，是全书的主线 demo；Chapter-7 在相同业务能力上演示 **MCP 工具化** 与 **A2A 服务化** 两种对外协作方式；**Chapter-10** 在 LangGraph 上实现 **跨任务技能学习与复用**（Hermes 闭环）。
 
 ---
 
@@ -56,6 +61,15 @@ pip install -e .
 ```
 
 Chapter-7 A2A / MCP 另需安装对应目录下的 `requirements.txt`（含 `a2a-sdk`、`mcp` 等）。
+
+Chapter-10 安装：
+
+```bash
+cd Chapter-10
+pip install -r requirements.txt
+```
+
+（完整版 SubAgent 会复用 Chapter-6 子智能体，建议已安装 Chapter-6 依赖。）
 
 ### 配置 `.env`（必读）
 
@@ -110,9 +124,9 @@ cp .env.example .env
 
 | 段落 | 变量示例 | 影响范围 |
 |------|----------|----------|
-| 一、大模型 | `DASHSCOPE_API_KEY`、`OPENAI_*` | Chapter-2～7 通用 |
-| 二、地图 POI | `AMAP_KEY`、`BAIDU_MAP_AK` | 酒店 / 景点 / 美食 Agent |
-| 二点五、天气 MCP | `WEATHERAPI_KEY` | Chapter-6 WeatherAgent（MCP 优先） |
+| 一、大模型 | `DASHSCOPE_API_KEY`、`OPENAI_*` | Chapter-2～7、Chapter-10 通用 |
+| 二、地图 POI | `AMAP_KEY`、`BAIDU_MAP_AK` | 酒店 / 景点 / 美食 Agent；Chapter-10 SubAgent |
+| 二点五、天气 MCP | `WEATHERAPI_KEY` | Chapter-6 / Chapter-10 WeatherAgent（MCP 优先） |
 | 二点六、酒店 MCP | `HOTEL_MCP_*` | Chapter-7 MCP Server 地址 |
 | 三、航班 | `AVIATIONSTACK_KEY`、`VARIFLIGHT_API_KEY` | Chapter-6 FlightAgent |
 | 四、其他 | `TMDB_BEARER_TOKEN` | 扩展 demo |
@@ -178,6 +192,30 @@ python hotel_recommendation_demo_mcp.py
 
 ---
 
+## Chapter-10 快速开始
+
+Chapter-10 演示 **Hermes 自我进化闭环**：任务执行 → LLM 评估 → 抽取技能 → 下次 `skill_view` 复用；旅游 Demo 为 **丽江 3 日游学习技能 → 大理 3 日游复用**。
+
+| 模式 | 入口 | 说明 |
+|------|------|------|
+| 完整 Hermes | `python Hermes_evolution_langgraph.py` | ReAct + `skill_view` + SubAgent（较慢，需 API） |
+| 书稿简化版 | `cd book && python langgraph_evolu.py` | 纯 LLM 规划，课堂快速跑通 |
+
+```powershell
+cd Chapter-10
+
+# 可选：清空旧技能，重新演示「学习 → 复用」
+# $env:TRAVEL_DEMO_FRESH="1"
+
+python Hermes_evolution_langgraph.py
+```
+
+可选环境变量：`WEATHER_USE_MCP=0` 跳过天气 MCP；`HERMES_CHECKPOINT=sqlite` 持久化 LangGraph checkpoint。
+
+详细说明见 [Chapter-10/README.md](Chapter-10/README.md)
+
+---
+
 ## 架构演进（全书主线）
 
 ```
@@ -192,6 +230,8 @@ Chapter-5  单 Agent + Tool（酒店）
 Chapter-6  多 Agent 编排（fixed_graph / supervisor）
     ↓
 Chapter-7  对外协作（MCP 工具协议 · A2A 远程 Agent 协议）
+    ↓
+Chapter-10 自我进化（技能库 SKILL.md · skill_view · 评估 / patch / Hub）
 ```
 
 ---
@@ -210,6 +250,12 @@ A：Chapter-6 为共享库源头；Chapter-7 A2A/MCP 目录各有副本或引用
 **Q：长期记忆存在哪？**  
 A：默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；可通过 `MEMORY_BACKEND=store` 切换 LangGraph Store（进程内，重启清空）。
 
+**Q：Chapter-10 和 Chapter-6 子智能体什么关系？**  
+A：Chapter-10 完整版通过 `@tool` 包装调用 `Chapter-10/sub_agents.py`（与 Chapter-6 同源能力）；书稿简化版 `book/langgraph_evolu.py` 不调用 SubAgent，仅用 LLM 生成行程。
+
+**Q：Chapter-10 技能存在哪？**  
+A：默认 `./my_agent_memory/skills/`（Hermes 为 `*.md`，书稿版为 `*.json`）；设置 `TRAVEL_DEMO_FRESH=1` 可清空后重跑 Demo。
+
 ---
 
 ## 相关文档索引
@@ -221,3 +267,4 @@ A：默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；可通过 `MEMORY_BA
 | [Chapter-6/supervisor/README.md](Chapter-6/supervisor/README.md) | Supervisor handoff 与长期记忆 |
 | [Chapter-7/A2A/hotel_recommendation_agent/README.md](Chapter-7/A2A/hotel_recommendation_agent/README.md) | A2A 服务启动与测试 |
 | [Chapter-7/Mcp/README.md](Chapter-7/Mcp/README.md) | MCP Server / Client |
+| [Chapter-10/README.md](Chapter-10/README.md) | Hermes 自我进化 Agent、两版对比与运行 |
