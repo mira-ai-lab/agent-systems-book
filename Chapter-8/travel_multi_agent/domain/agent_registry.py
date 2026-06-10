@@ -28,7 +28,7 @@ class SubAgentRegistry:
             },
             "HotelAgent": {
                 "name": "HotelAgent",
-                "description": "根据位置、预算、偏好（近景区/安静/品牌）推荐酒店；地图关键词与主观偏好分离（Chapter-5）",
+                "description": "根据位置、预算、偏好（近景区/安静/品牌）推荐酒店；地图关键词与主观偏好分离",
                 "skills": [{
                     "name": "recommend_hotel",
                     "inputSchema": ["city", "preferences", "budget_cny_per_night_max"],
