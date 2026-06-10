@@ -93,6 +93,7 @@ class WeatherMcpSession:
             args=(self._process,),
             daemon=True,
         ).start()
+        # 等待 MCP 进程就绪（最多约 8s，避免固定 5s 死等已崩溃的 npx）
         deadline = time.monotonic() + 8.0
         init: Dict[str, Any] = {}
         while time.monotonic() < deadline:
@@ -104,7 +105,7 @@ class WeatherMcpSession:
                     {
                         "protocolVersion": "2024-11-05",
                         "capabilities": {},
-                        "clientInfo": {"name": "chapter6-weather-agent", "version": "1.0.0"},
+                        "clientInfo": {"name": "chapter8-weather-agent", "version": "1.0.0"},
                     },
                 )
                 break
