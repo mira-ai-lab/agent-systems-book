@@ -1,0 +1,9 @@
+# Chapter-8 忽略运行时产物
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+chroma_memory/
+traces/
+*.sqlite3
+.env
