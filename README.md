@@ -1,6 +1,6 @@
 # agent-systems-book
 
-《智能体系统》配套代码仓库：从单 Agent 推理、记忆与任务规划，到多智能体编排，MCP / A2A 远程协作，再到 Hermes 自我进化 Agent 的完整示例。
+《智能体系统》配套代码仓库：从单 Agent 推理、记忆与任务规划，到多智能体编排与工程化整合（Chapter-8），MCP / A2A 远程协作，再到 Hermes 自我进化 Agent 的完整示例。
 
 ## 仓库结构
 
@@ -19,6 +19,11 @@ agent-systems-book/
 ├── Chapter-7/            # 协议化协作
 │   ├── A2A/              # Agent-to-Agent（HTTP 远程 Agent + Supervisor）
 │   └── Mcp/              # Model Context Protocol（HTTP/SSE 工具服务）
+├── Chapter-8/            # 旅行多智能体工程化整合（LangGraph 固定图 + 可观测性）
+│   ├── travel_multi_agent/   # Python 包（domain / agents / orchestration / tracing）
+│   ├── scripts/          # run_demo.py（支持 --stream）、show_graph.py
+│   ├── book/             # 书稿离线演示（central_agent_demo_short.py 等）
+│   └── tests/
 └── Chapter-10/           # Hermes 自我进化 Agent（技能学习 + LangGraph）
     ├── Hermes_evolution_langgraph.py   # 完整闭环 + SubAgent
     ├── book/             # 书稿简化版（langgraph_evolu.py 等）
@@ -36,9 +41,10 @@ agent-systems-book/
 | **Chapter-6** | 6 子智能体 + 三种编排模式 | 见下方「Chapter-6 快速开始」 |
 | **Chapter-7 A2A** | 远程 Agent 协议 + Supervisor 调度 | `A2A/supervisor_local.py` |
 | **Chapter-7 MCP** | 酒店工具 MCP Server（SSE） | `Mcp/hotel_mcp_server.py` |
+| **Chapter-8** | Ch2–5 能力整合 + LangGraph 固定图 + Tracing | `scripts/run_demo.py --stream` |
 | **Chapter-10** | Hermes 自我进化：技能抽取 / skill_view / patch | `Hermes_evolution_langgraph.py` |
 
-Chapter-6 整合了前几章能力，是全书的主线 demo；Chapter-7 在相同业务能力上演示 **MCP 工具化** 与 **A2A 服务化** 两种对外协作方式；**Chapter-10** 在 LangGraph 上实现 **跨任务技能学习与复用**（Hermes 闭环）。
+Chapter-6 整合了前几章能力，是全书的主线 demo；**Chapter-8** 在相同业务能力上提供 **工程化 Python 包**（`travel_multi_agent`）、**OpenTelemetry 可观测性** 与 **书稿离线案例**（`book/`）；Chapter-7 演示 **MCP 工具化** 与 **A2A 服务化** 两种对外协作方式；**Chapter-10** 在 LangGraph 上实现 **跨任务技能学习与复用**（Hermes 闭环）。
 
 ---
 
@@ -53,11 +59,16 @@ conda create -n agent-systems-book python=3.10 -y
 conda activate agent-systems-book
 ```
 
-各章有独立 `requirements.txt`；**Chapter-6 建议可编辑安装**（后续 import 更顺畅）：
+各章有独立 `requirements.txt`；**Chapter-6 / Chapter-8 建议可编辑安装**（后续 import 更顺畅）：
 
 ```bash
 cd Chapter-6
 pip install -e .
+
+cd Chapter-8
+pip install -e .
+# 开发依赖（pytest）
+pip install -e ".[dev]"
 ```
 
 Chapter-7 A2A / MCP 另需安装对应目录下的 `requirements.txt`（含 `a2a-sdk`、`mcp` 等）。
@@ -92,7 +103,7 @@ cp .env.example .env
 
 用编辑器打开根目录 `.env`，把 `your-xxx` 占位符换成你自己的值。
 
-**最少配置（能跑通 Chapter-6 多智能体）：**
+**最少配置（能跑通 Chapter-6 / Chapter-8 多智能体）：**
 
 | 变量 | 是否必填 | 说明 |
 |------|----------|------|
@@ -113,6 +124,7 @@ cp .env.example .env
 | 模块 | 加载逻辑 |
 |------|----------|
 | **Chapter-6** | `chapter6/paths.py` → `Chapter-6/.env` → 书根 `.env` |
+| **Chapter-8** | `travel_multi_agent/config.py` → `Chapter-8/.env` → 书根 `.env` |
 | **Chapter-7 A2A** | `hotel_recommendation_agent/.env` → 书根 `.env` |
 | **Chapter-3 等 notebook** | 多数直接 `load_dotenv(书根/.env)` |
 
@@ -124,13 +136,14 @@ cp .env.example .env
 
 | 段落 | 变量示例 | 影响范围 |
 |------|----------|----------|
-| 一、大模型 | `DASHSCOPE_API_KEY`、`OPENAI_*` | Chapter-2～7、Chapter-10 通用 |
+| 一、大模型 | `DASHSCOPE_API_KEY`、`OPENAI_*` | Chapter-2～8、Chapter-10 通用 |
 | 二、地图 POI | `AMAP_KEY`、`BAIDU_MAP_AK` | 酒店 / 景点 / 美食 Agent；Chapter-10 SubAgent |
-| 二点五、天气 MCP | `WEATHERAPI_KEY` | Chapter-6 / Chapter-10 WeatherAgent（MCP 优先） |
+| 二点五、天气 MCP | `WEATHERAPI_KEY` | Chapter-6 / Chapter-8 / Chapter-10 WeatherAgent（MCP 优先） |
 | 二点六、酒店 MCP | `HOTEL_MCP_*` | Chapter-7 MCP Server 地址 |
-| 三、航班 | `AVIATIONSTACK_KEY`、`VARIFLIGHT_API_KEY` | Chapter-6 FlightAgent |
+| 三、航班 | `AVIATIONSTACK_KEY`、`VARIFLIGHT_API_KEY` | Chapter-6 / Chapter-8 FlightAgent |
 | 四、其他 | `TMDB_BEARER_TOKEN` | 扩展 demo |
 | 五、Chapter-6 选项 | `MEMORY_BACKEND=chroma\|store` | 长期记忆后端 |
+| 六、Chapter-8 可观测性 | `OTEL_TRACES_EXPORTER`、`LOG_LEVEL` | OpenTelemetry span 与结构化日志 |
 
 > **安全提示**：`.env` 已在 `.gitignore` 中忽略；若误提交，请立即在云平台轮换 Key。
 
@@ -153,6 +166,34 @@ Chapter-6 提供三种编排方式，能力等价、调度机制不同：
 - [Chapter-6/README.md](Chapter-6/README.md)
 - [Chapter-6/supervisor/README.md](Chapter-6/supervisor/README.md)
 - [Chapter-6/fixed_graph/README.md](Chapter-6/fixed_graph/README.md)
+
+---
+
+## Chapter-8 快速开始
+
+Chapter-8 将 **Chapter-2～5** 能力整合为独立 Python 包 `travel_multi_agent`，采用 **LangGraph 固定图** 编排，并内置 **OpenTelemetry + 结构化日志**。
+
+固定图六步：
+
+```
+pre_survey → retrieve_memory → build_plan → execute_layer → aggregate → save_memory
+```
+
+| 用途 | 命令 |
+|------|------|
+| 查看图结构（无需 API Key） | `cd Chapter-8 && python scripts/show_graph.py` |
+| 完整演示（流式输出，推荐） | `python scripts/run_demo.py --stream` |
+| 完整演示（批量输出） | `python scripts/run_demo.py` |
+| 交互对话 | `python scripts/run_demo.py --stream --chat` |
+| 书稿离线案例（无需 API） | `cd book && python central_agent_demo_short.py` |
+| 书稿扩展案例 | `cd book && python central_agent_demo.py` |
+| 单元测试 | `cd Chapter-8 && pytest` |
+
+子智能体：**Weather · Attraction · Hotel · Restaurant · Flight · Itinerary**（与 Chapter-6 同源能力）
+
+与 Chapter-6 关系：Chapter-6 提供多种编排入口（顺序 / fixed_graph / supervisor）；Chapter-8 聚焦 **固定图工程化实现**（包结构、tracing、测试与书稿案例）。
+
+详细说明见 [Chapter-8/README.md](Chapter-8/README.md)
 
 ---
 
@@ -229,6 +270,8 @@ Chapter-5  单 Agent + Tool（酒店）
     ↓
 Chapter-6  多 Agent 编排（fixed_graph / supervisor）
     ↓
+Chapter-8  工程化整合（travel_multi_agent 包 · 固定图 · 可观测性 · 书稿案例）
+    ↓
 Chapter-7  对外协作（MCP 工具协议 · A2A 远程 Agent 协议）
     ↓
 Chapter-10 自我进化（技能库 SKILL.md · skill_view · 评估 / patch / Hub）
@@ -239,7 +282,13 @@ Chapter-10 自我进化（技能库 SKILL.md · skill_view · 评估 / patch / H
 ## 常见问题
 
 **Q：只配了 `DASHSCOPE_API_KEY`，能跑吗？**  
-A：可以。Chapter-6 核心流程可运行；地图、航班等未配置时会回退 stub 或公开备用接口（如 wttr.in 天气）。
+A：可以。Chapter-6 / Chapter-8 核心流程可运行；地图、航班等未配置时会回退 stub 或公开备用接口（如 wttr.in 天气）。
+
+**Q：Chapter-6 和 Chapter-8 有什么区别？**  
+A：业务能力等价（6 个子智能体 + 预调查 + 记忆 + 任务规划）。Chapter-6 含三种编排入口与 Supervisor 模式；Chapter-8 以 **LangGraph 固定图** 为主，代码组织为 `travel_multi_agent` 包，并增加 **Tracing**、**pytest** 与 **`book/` 书稿离线案例**。
+
+**Q：Chapter-8 书稿案例用哪个文件？**  
+A：正文配套精简版 `Chapter-8/book/central_agent_demo_short.py`（离线可跑）；扩展版 `central_agent_demo.py`；联网完整版 `scripts/run_demo.py --stream`。
 
 **Q：模型名写 `qwen3.6-plus` 报错？**  
 A：请改为 `qwen-plus`（或 `.env` 里 `DASHSCOPE_CHAT_MODEL` / `DEPLOYMENT_NAME` 使用百炼控制台实际模型名）。
@@ -248,7 +297,7 @@ A：请改为 `qwen-plus`（或 `.env` 里 `DASHSCOPE_CHAT_MODEL` / `DEPLOYMENT_
 A：Chapter-6 为共享库源头；Chapter-7 A2A/MCP 目录各有副本或引用，酒店检索逻辑与 Chapter-5/6 保持一致。
 
 **Q：长期记忆存在哪？**  
-A：默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；可通过 `MEMORY_BACKEND=store` 切换 LangGraph Store（进程内，重启清空）。
+A：Chapter-6 默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；Chapter-8 默认到 `Chapter-8/chroma_memory/`。均可通过 `MEMORY_BACKEND=store` 切换 LangGraph Store（进程内，重启清空）。
 
 **Q：Chapter-10 和 Chapter-6 子智能体什么关系？**  
 A：Chapter-10 完整版通过 `@tool` 包装调用 `Chapter-10/sub_agents.py`（与 Chapter-6 同源能力）；书稿简化版 `book/langgraph_evolu.py` 不调用 SubAgent，仅用 LLM 生成行程。
@@ -265,6 +314,7 @@ A：默认 `./my_agent_memory/skills/`（Hermes 为 `*.md`，书稿版为 `*.jso
 | [.env.example](.env.example) | 全部环境变量说明与申请链接 |
 | [Chapter-6/README.md](Chapter-6/README.md) | 多智能体目录结构与三种模式 |
 | [Chapter-6/supervisor/README.md](Chapter-6/supervisor/README.md) | Supervisor handoff 与长期记忆 |
+| [Chapter-8/README.md](Chapter-8/README.md) | 工程化多智能体包、Tracing、运行与 API |
 | [Chapter-7/A2A/hotel_recommendation_agent/README.md](Chapter-7/A2A/hotel_recommendation_agent/README.md) | A2A 服务启动与测试 |
 | [Chapter-7/Mcp/README.md](Chapter-7/Mcp/README.md) | MCP Server / Client |
 | [Chapter-10/README.md](Chapter-10/README.md) | Hermes 自我进化 Agent、两版对比与运行 |

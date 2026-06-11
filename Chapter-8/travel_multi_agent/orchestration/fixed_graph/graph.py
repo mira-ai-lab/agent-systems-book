@@ -12,11 +12,13 @@ from travel_multi_agent.infra.memory.memory_system import LongTermMemory
 
 from .nodes import GraphContext, has_more_layers, make_nodes
 from .state import CentralAgentState
+from .stream_sink import StreamSink
 
 
 def build_central_agent_graph(
     llm: ChatOpenAI,
     memory_system: Optional[LongTermMemory] = None,
+    stream_sink: Optional[StreamSink] = None,
 ) -> StateGraph:
     """
     构建中心智能体 StateGraph
@@ -25,7 +27,7 @@ def build_central_agent_graph(
         pre_survey → retrieve_memory → build_plan
             → execute_layer (循环) → aggregate → save_memory → END
     """
-    ctx = GraphContext(llm, memory_system)
+    ctx = GraphContext(llm, memory_system, stream_sink=stream_sink)
     nodes = make_nodes(ctx)
 
     graph = StateGraph(CentralAgentState)
@@ -60,9 +62,10 @@ def compile_graph(
     memory_system: Optional[LongTermMemory] = None,
     checkpointer: Any = None,
     store: Any = None,
+    stream_sink: Optional[StreamSink] = None,
 ):
     """编译可执行的 LangGraph 应用"""
-    graph = build_central_agent_graph(llm, memory_system)
+    graph = build_central_agent_graph(llm, memory_system, stream_sink=stream_sink)
     if checkpointer is None:
         checkpointer = MemorySaver()
     compile_kwargs: dict = {"checkpointer": checkpointer}

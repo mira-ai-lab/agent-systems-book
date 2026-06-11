@@ -1,4 +1,4 @@
-"""纯函数：预调查 / 任务拆解 / JSON 解析（无 LangChain 依赖）。"""
+﻿"""纯函数：预调查 / 任务拆解 / JSON 解析（无 LangChain 依赖）。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from travel_multi_agent.domain.prompts import PRE_SURVEY_SECTION_KEYS
 
 
 def parse_pre_survey(text: str) -> Dict[str, Any]:
-    """解析 Chapter-2 预调查四段式输出"""
+    """解析预调查四段式输出"""
     result: Dict[str, Any] = {
         "given_facts": [],
         "facts_to_lookup": [],
@@ -56,7 +56,7 @@ def parse_pre_survey(text: str) -> Dict[str, Any]:
 
 
 def parse_decomposition_response(response: str, lang: str = "zh") -> Dict[str, Any]:
-    """解析 Chapter-4 任务拆解输出"""
+    """解析  任务拆解输出"""
     totalgoal_key = "# 目标" if lang == "zh" else "# Goal"
     substep_key = "# 任务拆解" if lang == "zh" else "# Subtasks"
 

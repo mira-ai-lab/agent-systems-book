@@ -32,3 +32,6 @@ class CentralAgentState(TypedDict, total=False):
     # 输出
     final_response: str
     logs: List[str]
+
+    # 流式展示：为 True 时聚合 LLM 逐 token 输出，并减少 tracing 刷屏
+    enable_stream: bool

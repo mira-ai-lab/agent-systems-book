@@ -1,4 +1,7 @@
-"""LangGraph 节点：TaskPlanner / Memory / SubAgent"""
+"""LangGraph 固定图节点：预调查 → 记忆检索 → 规划 → 分层执行 → 聚合 → 写回记忆。
+
+各节点通过 make_nodes() 工厂生成，由 graph.py 组装为完整编排图。
+"""
 
 from __future__ import annotations
 
@@ -22,18 +25,41 @@ from travel_multi_agent.infra.memory.memory_system import LongTermMemory
 from travel_multi_agent.tracing import get_logger, log_info, record_exception, record_tool_event, span
 
 from .state import CentralAgentState
+from .stream_sink import StreamSink
 
 logger = get_logger(__name__)
 
 
-def _append_log(state: CentralAgentState, message: str) -> List[str]:
+def _streaming(state: CentralAgentState) -> bool:
+    return bool(state.get("enable_stream"))
+
+
+def _append_log(state: CentralAgentState, message: str, *, trace: bool = True) -> List[str]:
+    """向 state.logs 追加一行；流式模式下默认不写 tracing（避免刷屏）。"""
     logs = list(state.get("logs") or [])
     logs.append(message)
-    log_info(logger, message.replace("\n", " "), thread_id=state.get("thread_id"))
+    if trace and not _streaming(state):
+        log_info(logger, message.replace("\n", " "), thread_id=state.get("thread_id"))
     return logs
 
 
+async def _stream_llm_text(llm: ChatOpenAI, messages: list, sink: StreamSink) -> str:
+    """调用 LLM 并逐 token 转发到 StreamSink。"""
+    parts: List[str] = []
+    async for chunk in llm.astream(messages):
+        token = chunk.content if isinstance(chunk.content, str) else ""
+        if token:
+            parts.append(token)
+            sink.emit_token(token)
+    return "".join(parts)
+
+
 def _topological_layers(execution_plan: Dict[str, Any]) -> List[List[str]]:
+    """将 execution_order 按 depends_on 拆成可并行执行的层。
+
+    每层内任务依赖均已满足，可 asyncio.gather 并行；层与层之间串行。
+    若依赖信息缺失导致无法推进，强制取 remaining[0] 避免死循环。
+    """
     subtasks = {t["task_id"]: t for t in execution_plan.get("subtasks", [])}
     order = execution_plan.get("execution_order", list(subtasks.keys()))
     done: set = set()
@@ -54,6 +80,7 @@ def _topological_layers(execution_plan: Dict[str, Any]) -> List[List[str]]:
 
 
 def _format_result(result: Any) -> str:
+    """将子任务结果格式化为 JSON 字符串，不可序列化时回退 str()。"""
     try:
         return json.dumps(result, ensure_ascii=False, indent=2)
     except (TypeError, ValueError):
@@ -65,6 +92,7 @@ def _log_subtask_start(
     logs: List[str],
     task: Dict[str, Any],
 ) -> List[str]:
+    """记录子任务开始：task_id、目标 Agent、描述摘要（最多 60 字符）。"""
     task_id = task["task_id"]
     agent_name = task.get("agent", "ItineraryAgent")
     description = (task.get("description") or "")[:60]
@@ -87,24 +115,34 @@ def _log_subtask_done(
     logs: List[str],
     result: Dict[str, Any],
 ) -> List[str]:
+    """记录子任务完成；流式模式仅一行摘要，非流式保留完整 JSON。"""
     agent_name = result.get("agent", "?")
-    logs = _append_log({**state, "logs": logs}, f"     ✓ {agent_name} 执行完成")
-    logs = _append_log({**state, "logs": logs}, "     " + "-" * 56)
-    for line in _format_result(result).splitlines():
-        logs = _append_log({**state, "logs": logs}, f"     {line}")
-    logs = _append_log({**state, "logs": logs}, "     " + "-" * 56)
-    log_info(
-        logger,
-        "subtask.done",
-        task_id=result.get("task_id"),
-        agent=agent_name,
-        status=result.get("status"),
-        thread_id=state.get("thread_id"),
-    )
+    status = result.get("status", "?")
+    if _streaming(state):
+        logs = _append_log(
+            {**state, "logs": logs},
+            f"     ✓ {result.get('task_id')} {agent_name} 完成（{status}）",
+        )
+    else:
+        logs = _append_log({**state, "logs": logs}, f"     ✓ {agent_name} 执行完成")
+        logs = _append_log({**state, "logs": logs}, "     " + "-" * 56)
+        for line in _format_result(result).splitlines():
+            logs = _append_log({**state, "logs": logs}, f"     {line}")
+        logs = _append_log({**state, "logs": logs}, "     " + "-" * 56)
+    if not _streaming(state):
+        log_info(
+            logger,
+            "subtask.done",
+            task_id=result.get("task_id"),
+            agent=agent_name,
+            status=status,
+            thread_id=state.get("thread_id"),
+        )
     return logs
 
 
 def _tool_has_error(content: Any) -> bool:
+    """检测工具返回值是否含 error 字段（支持 dict、JSON 字符串或含 "error" 的纯文本）。"""
     if content is None:
         return False
     if isinstance(content, dict):
@@ -125,6 +163,12 @@ async def _invoke_sub_agent(
     prior_results: Dict[str, Any],
     thread_id: str,
 ) -> Dict[str, Any]:
+    """调用单个子 Agent：拼装描述 + 参数 + 上游依赖结果，解析 tool/ai 消息。
+
+    返回 {task_id, agent, status, tool_data, agent_summary}。
+    异常不向上抛出，统一封装为 status="failed" 以便同层其他任务继续执行；
+    依赖结果超过 2000 字符会截断，避免 prompt 过长。
+    """
     task_id = task["task_id"]
     agent_name = task.get("agent", "ItineraryAgent")
     description = task.get("description", "")
@@ -215,23 +259,27 @@ async def _invoke_sub_agent(
 
 
 class GraphContext:
-    """图节点共享上下文（LLM、规划器、记忆）"""
+    """图节点共享上下文：LLM、Agent 注册表、TaskPlanner、长期记忆系统。"""
 
     def __init__(
         self,
         llm: ChatOpenAI,
         memory_system: LongTermMemory | None = None,
+        stream_sink: StreamSink | None = None,
     ) -> None:
+        """初始化编排依赖；memory_system 为 None 时记忆相关节点自动跳过。"""
         self.llm = llm
         self.registry = SubAgentRegistry()
         self.planner = TaskPlanner(llm, self.registry)
         self.memory_system = memory_system
+        self.stream_sink = stream_sink or StreamSink()
 
 
 def _traced_node(
     step: str,
     fn: Callable[[CentralAgentState], Any],
 ) -> Callable[[CentralAgentState], Any]:
+    """为节点函数包装 tracing span；异常时 record_exception 后原样抛出。"""
     async def wrapped(state: CentralAgentState) -> Dict[str, Any]:
         thread_id = state.get("thread_id", "default")
         with span(
@@ -249,19 +297,31 @@ def _traced_node(
 
 
 def make_nodes(ctx: GraphContext):
-    """工厂：绑定 LLM / Planner 后返回各节点函数"""
+    """工厂：绑定 GraphContext 后返回 LangGraph 可用的节点函数字典。
+
+    返回键：pre_survey / retrieve_memory / build_plan / execute_layer /
+            aggregate / save_memory。execute_layer 自带层级 span，不再二次包装。
+    """
 
     async def pre_survey_node(state: CentralAgentState) -> Dict[str, Any]:
+        """Ch2 节点：对用户请求做思维链预调查，写入 state.pre_survey。"""
+        if _streaming(state):
+            ctx.stream_sink.emit_progress("\n🔍 [Ch2] 思维链预调查...")
         logs = _append_log(state, "\n🔍 [Ch2] 思维链预调查...")
         pre_survey = await ctx.planner.run_pre_survey(state["user_query"])
         summary = {k: v for k, v in pre_survey.items() if k != "raw_text"}
-        logs = _append_log(
-            {**state, "logs": logs},
-            "✓ 预调查完成\n" + json.dumps(summary, ensure_ascii=False, indent=2),
-        )
+        if _streaming(state):
+            ctx.stream_sink.emit_progress("✓ [Ch2] 预调查完成")
+            logs = _append_log({**state, "logs": logs}, "✓ 预调查完成")
+        else:
+            logs = _append_log(
+                {**state, "logs": logs},
+                "✓ 预调查完成\n" + json.dumps(summary, ensure_ascii=False, indent=2),
+            )
         return {"pre_survey": pre_survey, "logs": logs}
 
     async def retrieve_memory_node(state: CentralAgentState) -> Dict[str, Any]:
+        """Ch3 节点：按 user_query 检索长期记忆，供后续规划与聚合使用。"""
         logs = list(state.get("logs") or [])
         memories: List[Dict[str, Any]] = []
         if ctx.memory_system and state.get("enable_memory", True):
@@ -287,6 +347,9 @@ def make_nodes(ctx: GraphContext):
         return {"retrieved_memories": memories, "logs": logs}
 
     async def build_plan_node(state: CentralAgentState) -> Dict[str, Any]:
+        """Ch4 节点：拆解子任务、分析依赖、路由 Agent，并预计算 pending_layers。"""
+        if _streaming(state):
+            ctx.stream_sink.emit_progress("\n📋 [Ch4] 任务拆解 → 依赖分析 → 子智能体路由...")
         logs = _append_log(state, "\n📋 [Ch4] 任务拆解 → 依赖分析 → 子智能体路由...")
         plan = await ctx.planner.build_execution_plan(
             state["user_query"],
@@ -294,14 +357,13 @@ def make_nodes(ctx: GraphContext):
             state.get("retrieved_memories") or [],
         )
         layers = _topological_layers(plan)
-        logs = _append_log(
-            {**state, "logs": logs},
-            f"✓ 共 {len(plan['subtasks'])} 个子任务，{len(layers)} 个执行层",
-        )
-        logs = _append_log(
-            {**state, "logs": logs},
-            f"  执行顺序: {' → '.join(plan['execution_order'])}",
-        )
+        summary = f"✓ 共 {len(plan['subtasks'])} 个子任务，{len(layers)} 个执行层"
+        order_line = f"  执行顺序: {' → '.join(plan['execution_order'])}"
+        if _streaming(state):
+            ctx.stream_sink.emit_progress(summary)
+            ctx.stream_sink.emit_progress(order_line)
+        logs = _append_log({**state, "logs": logs}, summary)
+        logs = _append_log({**state, "logs": logs}, order_line)
         log_info(
             logger,
             "plan.built",
@@ -321,6 +383,7 @@ def make_nodes(ctx: GraphContext):
         }
 
     async def execute_layer_node(state: CentralAgentState) -> Dict[str, Any]:
+        """Ch5+ 节点：执行当前层子任务；同层多任务并行，层内失败不阻断其余任务。"""
         layers = state.get("pending_layers") or []
         idx = state.get("current_layer_index", 0)
         subtasks = {t["task_id"]: t for t in state.get("subtasks") or []}
@@ -342,13 +405,17 @@ def make_nodes(ctx: GraphContext):
                 "thread.id": thread_id,
             },
         ):
-            logs = _append_log(
-                {**state, "logs": logs},
-                f"\n⚙️ [Ch5+] 执行第 {idx + 1}/{len(layers)} 层: {layer}",
-            )
+            layer_msg = f"\n⚙️ [Ch5+] 执行第 {idx + 1}/{len(layers)} 层: {layer}"
+            if _streaming(state):
+                ctx.stream_sink.emit_progress(layer_msg)
+            logs = _append_log({**state, "logs": logs}, layer_msg)
 
             tasks = [subtasks[tid] for tid in layer]
             for task in tasks:
+                if _streaming(state):
+                    tid = task["task_id"]
+                    agent_name = task.get("agent", "ItineraryAgent")
+                    ctx.stream_sink.emit_progress(f"  ▶ {tid} → {agent_name}")
                 logs = _log_subtask_start({**state, "logs": logs}, logs, task)
 
             if len(tasks) == 1:
@@ -384,19 +451,31 @@ def make_nodes(ctx: GraphContext):
         }
 
     async def aggregate_node(state: CentralAgentState) -> Dict[str, Any]:
+        """聚合节点：单任务直出 / 带记忆 LLM 聚合 / 无记忆 AGGREGATION_PROMPT 三选一。"""
+        if _streaming(state):
+            ctx.stream_sink.emit_progress("\n📝 聚合结果...")
         logs = _append_log(state, "\n📝 聚合结果...")
         plan = state.get("execution_plan") or {}
         results = state.get("subtask_results") or {}
         user_query = state["user_query"]
         thread_id = state.get("thread_id", "default")
+        stream = _streaming(state)
+        sink = ctx.stream_sink
+        title = "📋 最终回复" if is_single_direct_response(results) else "📋 最终旅行规划"
+        header = "\n" + "=" * 80 + "\n" + title + "\n" + "=" * 80 + "\n"
+        footer = "=" * 80
 
         if is_single_direct_response(results):
             final_text = direct_response_from_results(results)
+            if stream:
+                sink.emit_progress("  ✓ 单任务直出（跳过聚合 LLM）")
             logs = _append_log(
                 {**state, "logs": logs},
                 "  ✓ 单任务查询，直接使用子智能体回复（跳过旅行规划聚合）",
             )
         elif ctx.memory_system and state.get("enable_memory", True):
+            if stream:
+                sink.emit_progress("  🧠 聚合时注入长期记忆上下文")
             logs = _append_log(
                 {**state, "logs": logs},
                 "  🧠 聚合时注入长期记忆上下文",
@@ -408,10 +487,18 @@ def make_nodes(ctx: GraphContext):
             )
             prompt += f"\n\n## 子任务执行结果\n{json.dumps(results, ensure_ascii=False, indent=2)}"
             prompt += f"\n\n{MEMORY_AGGREGATION_INSTRUCTION}"
-            response = await ctx.llm.ainvoke([HumanMessage(content=prompt)])
-            final_text = response.content or ""
+            messages = [HumanMessage(content=prompt)]
+            if stream:
+                sink.emit_progress(header)
+                final_text = await _stream_llm_text(ctx.llm, messages, sink)
+                sink.emit_progress("\n" + footer)
+            else:
+                response = await ctx.llm.ainvoke(messages)
+                final_text = response.content or ""
             logs = _append_log({**state, "logs": logs}, "  ✓ 聚合完成")
         else:
+            if stream:
+                sink.emit_progress("  🧠 聚合未使用记忆（记忆未启用）")
             logs = _append_log({**state, "logs": logs}, "  🧠 聚合未使用记忆（记忆未启用）")
             prompt = AGGREGATION_PROMPT.format(
                 user_query=user_query,
@@ -420,19 +507,34 @@ def make_nodes(ctx: GraphContext):
                 total_goal=plan.get("total_goal", ""),
                 results=json.dumps(results, ensure_ascii=False, indent=2),
             )
-            response = await ctx.llm.ainvoke([HumanMessage(content=prompt)])
-            final_text = response.content or ""
+            messages = [HumanMessage(content=prompt)]
+            if stream:
+                sink.emit_progress(header)
+                final_text = await _stream_llm_text(ctx.llm, messages, sink)
+                sink.emit_progress("\n" + footer)
+            else:
+                response = await ctx.llm.ainvoke(messages)
+                final_text = response.content or ""
             logs = _append_log({**state, "logs": logs}, "  ✓ 聚合完成")
 
-        title = "📋 最终回复" if is_single_direct_response(results) else "📋 最终旅行规划"
+        if stream and is_single_direct_response(results):
+            sink.emit_progress(header)
+            sink.emit_token(final_text)
+            sink.emit_progress("\n" + footer)
+
         logs = _append_log({**state, "logs": logs}, "\n" + "=" * 80)
         logs = _append_log({**state, "logs": logs}, title)
         logs = _append_log({**state, "logs": logs}, "=" * 80)
-        logs = _append_log({**state, "logs": logs}, final_text)
+        logs = _append_log(
+            {**state, "logs": logs},
+            final_text,
+            trace=not stream,
+        )
         logs = _append_log({**state, "logs": logs}, "=" * 80)
         return {"final_response": final_text, "logs": logs}
 
     async def save_memory_node(state: CentralAgentState) -> Dict[str, Any]:
+        """Ch3 写回节点：记录对话轮次，并将用户请求 + 回复摘要写入长期偏好记忆。"""
         logs = list(state.get("logs") or [])
         if ctx.memory_system and state.get("enable_memory", True):
             thread_id = state.get("thread_id", "default")
@@ -467,7 +569,7 @@ def make_nodes(ctx: GraphContext):
 
 
 def has_more_layers(state: CentralAgentState) -> str:
-    """条件边：是否还有未执行的层"""
+    """LangGraph 条件边：current_layer_index 未越界则继续 execute_layer，否则进入 aggregate。"""
     layers = state.get("pending_layers") or []
     idx = state.get("current_layer_index", 0)
     if idx < len(layers):

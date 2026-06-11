@@ -57,3 +57,4 @@ def test_file_exporter_writes_spans(tmp_path):
     assert record["trace_id"] == format(ctx.trace_id, "032x")
     assert record["name"] == "test.file_export"
     assert record["attributes"]["step"] == "unit_test"
+test_span_exception_with_duplicate_step_attribute()
