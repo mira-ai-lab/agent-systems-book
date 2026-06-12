@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 from datetime import date, datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from travel_multi_agent.config import load_project_dotenv
 
@@ -256,6 +256,63 @@ def _choose_tool_and_args(city: str, norm_date: str) -> tuple[str, Dict[str, Any
         return "get_future_weather", {"q": q, "dt": norm_date}
 
     raise RuntimeError(f"日期 {norm_date} 超出 MCP 可查询范围")
+
+
+def fetch_weather_forecast_via_mcp_sync(city: str, days: int = 7) -> Dict[str, Any]:
+    """同步调用 MCP get_forecast，返回多日预报列表。"""
+    n_days = max(1, min(int(days or 7), 14))
+    try:
+        with _MCP_LOCK:
+            session = _get_session()
+            result = session.call_tool("get_forecast", {"q": city.strip(), "days": n_days})
+        payload = _extract_tool_json(result)
+        if payload.get("error"):
+            raise RuntimeError(payload["error"])
+        location = payload.get("location") or {}
+        loc_name = location.get("name") or city
+        daily: List[Dict[str, Any]] = []
+        for day in (payload.get("forecast") or {}).get("forecastday") or []:
+            if not isinstance(day, dict):
+                continue
+            summary = day.get("day") or {}
+            condition = (summary.get("condition") or {}).get("text") or "未知"
+            daily.append({
+                "date": day.get("date"),
+                "condition": condition,
+                "temp_high_c": summary.get("maxtemp_c"),
+                "temp_low_c": summary.get("mintemp_c"),
+                "avg_humidity": summary.get("avghumidity"),
+                "daily_chance_of_rain": summary.get("daily_chance_of_rain"),
+            })
+        return {
+            "city": loc_name,
+            "days": len(daily),
+            "forecasts": daily,
+            "data_source": "weatherapi-mcp/get_forecast",
+        }
+    except Exception:
+        with _MCP_LOCK:
+            _reset_session()
+        raise
+
+
+async def fetch_weather_forecast_via_mcp(city: str, days: int = 7) -> Optional[Dict[str, Any]]:
+    """多日预报；失败返回 None。"""
+    global _MCP_DISABLED
+    if _MCP_DISABLED:
+        return None
+    if os.getenv("WEATHER_USE_MCP", "1").strip().lower() in ("0", "false", "no", "off"):
+        return None
+    if not (os.getenv("WEATHERAPI_KEY") or "").strip():
+        return None
+    try:
+        return await asyncio.to_thread(fetch_weather_forecast_via_mcp_sync, city, days)
+    except Exception as exc:
+        _MCP_DISABLED = True
+        print(f"[weather-Mcp] forecast 查询失败: {exc}", flush=True)
+        with _MCP_LOCK:
+            _reset_session()
+        return None
 
 
 def fetch_weather_via_mcp_sync(city: str, norm_date: str) -> Dict[str, Any]:

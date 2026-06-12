@@ -15,6 +15,10 @@ from travel_multi_agent.domain.parsing import (
     parse_json_from_llm,
     parse_pre_survey,
 )
+from travel_multi_agent.domain.plan_context import (
+    build_time_anchor,
+    format_time_anchor_block,
+)
 from travel_multi_agent.domain.prompts import (
     AGENT_ROUTING_PROMPT,
     DEPENDENCY_SYSTEM_PROMPT_ZH,
@@ -22,6 +26,7 @@ from travel_multi_agent.domain.prompts import (
     FACTS_PROMPT,
     PROMPT_TP_ZH,
 )
+from travel_multi_agent.tracing import trace_span
 
 
 class TaskPlanner:
@@ -35,6 +40,10 @@ class TaskPlanner:
         self.llm = llm
         self.agent_registry = agent_registry
 
+    @trace_span(
+        name="latc.travel-multi-agent.planner.pre_survey",
+        attrs_args=["user_query"],
+    )
     async def run_pre_survey(self, user_query: str) -> Dict[str, Any]:
         """Chapter-2 预调查：让 LLM 梳理已知事实、待查事实、待推导项与合理猜测。
 
@@ -44,6 +53,11 @@ class TaskPlanner:
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return parse_pre_survey(response.content or "")
 
+    @trace_span(
+        name="latc.travel-multi-agent.planner.decomposition",
+        attrs_args=["user_query"],
+        record_result=False,
+    )
     async def run_decomposition(
         self,
         user_query: str,
@@ -55,6 +69,7 @@ class TaskPlanner:
         返回 {"totalGoal": 整体目标, "subSteps": 子任务描述列表}。
         """
         background_parts = [
+            format_time_anchor_block(build_time_anchor()),
             "【思维链预调查】",
             json.dumps({k: v for k, v in pre_survey.items() if k != "raw_text"}, ensure_ascii=False),
         ]
@@ -70,6 +85,11 @@ class TaskPlanner:
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         return parse_decomposition_response(response.content or "", lang="zh")
 
+    @trace_span(
+        name="latc.travel-multi-agent.planner.dependency",
+        attrs_args=["sub_steps"],
+        record_result=False,
+    )
     async def run_dependency_analysis(self, sub_steps: List[str]) -> Tuple[List[str], Dict[str, List[str]]]:
         """分析子任务执行顺序：为每个子任务分配 T1/T2/... 编号，由 LLM 输出依赖排序 JSON。
 
@@ -92,6 +112,11 @@ class TaskPlanner:
         depends_map: Dict[str, List[str]] = {tid: [] for tid in id_to_task}
         return execution_order, depends_map
 
+    @trace_span(
+        name="latc.travel-multi-agent.planner.routing",
+        attrs_args=["sub_steps"],
+        record_result=False,
+    )
     async def route_to_agents(
         self,
         sub_steps: List[str],
@@ -109,7 +134,9 @@ class TaskPlanner:
             for tid in execution_order
         ]
         prompt = AGENT_ROUTING_PROMPT.format(
-            agent_team=self.agent_registry.get_all_agents_text()
+            agent_team=format_time_anchor_block(build_time_anchor())
+            + "\n"
+            + self.agent_registry.get_all_agents_text()
             + "\n"
             + self.agent_registry.get_agent_parameters_text(),
             subtasks_json=json.dumps(subtasks_for_prompt, ensure_ascii=False, indent=2),
@@ -145,6 +172,11 @@ class TaskPlanner:
         """根据子任务描述关键词匹配 Agent 名称（供测试或外部调用）。"""
         return guess_agent(description)
 
+    @trace_span(
+        name="latc.travel-multi-agent.planner.build_plan",
+        attrs_args=["user_query"],
+        record_result=False,
+    )
     async def build_execution_plan(
         self,
         user_query: str,
@@ -158,6 +190,8 @@ class TaskPlanner:
         decomposition = await self.run_decomposition(user_query, pre_survey, memories)
         execution_order, depends_map = await self.run_dependency_analysis(decomposition["subSteps"])
         subtasks = await self.route_to_agents(decomposition["subSteps"], execution_order, depends_map)
+        execution_order = [t["task_id"] for t in subtasks]
+
         return {
             "pre_survey": {k: v for k, v in pre_survey.items() if k != "raw_text"},
             "pre_survey_raw": pre_survey.get("raw_text", ""),

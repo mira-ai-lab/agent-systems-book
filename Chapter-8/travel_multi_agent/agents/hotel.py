@@ -8,6 +8,10 @@ from typing import Any, Dict, List, Optional
 from langchain_core.tools import tool
 
 from travel_multi_agent.agents.base import build_agent
+from travel_multi_agent.agents.prompt_fragments import (
+    MULTI_ENTITY_TOOL_RULES,
+    agent_time_anchor_block,
+)
 from travel_multi_agent.infra.travel_api import fetch_hotels_from_api, norm_text, require_non_empty
 
 _DISTRICT_RE = re.compile(r"[\u4e00-\u9fff]{1,12}(?:区|县)")
@@ -17,7 +21,8 @@ _POI_HINT = re.compile(
 )
 _SUBJECTIVE_HINT = re.compile(r"安静|吵闹|性价比|舒适|干净|卫生|便宜|奢华|亲子|早餐|贴心|便利|方便")
 
-SYSTEM_PROMPT = """你是酒店推荐助手，只能通过工具 recommend_hotel 查酒店。
+def _system_prompt() -> str:
+    return f"""你是酒店推荐助手，只能通过工具 recommend_hotel 查酒店。
 
 规则：
 1. city 必填；有预算时传入 budget_cny_per_night_max。
@@ -26,8 +31,11 @@ SYSTEM_PROMPT = """你是酒店推荐助手，只能通过工具 recommend_hotel
 3. 工具返回 hotels 后，结合用户全部诉求，推荐 3–5 家最合适的酒店（按匹配度排序）。
    每家需包含：名称、地址/位置、参考价格、评分（如有）、1 句推荐理由。
    若用户明确要求「只推荐一家」，则只输出 1 家。
-4. 若 hotels 为空或不足 3 家，如实说明并给出已有选项或调整建议（放宽预算/扩大范围）。
-5. 非酒店问题，回复：我只能协助酒店推荐。
+4. 多城任务：对每个城市各调用一次 recommend_hotel，再分别给出推荐。
+5. 若 hotels 为空或不足 3 家，如实说明并给出已有选项或调整建议（放宽预算/扩大范围）。
+6. 非酒店问题，回复：我只能协助酒店推荐。
+{agent_time_anchor_block()}
+{MULTI_ENTITY_TOOL_RULES}
 """
 
 
@@ -96,4 +104,4 @@ async def recommend_hotel(
 
 
 def create_hotel_agent() -> Any:
-    return build_agent([recommend_hotel], SYSTEM_PROMPT)
+    return build_agent([recommend_hotel], _system_prompt())

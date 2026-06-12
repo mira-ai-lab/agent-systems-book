@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +17,32 @@ from opentelemetry.util.types import AttributeValue
 
 def _format_ns(ns: int) -> str:
     return datetime.fromtimestamp(ns / 1_000_000_000, tz=timezone.utc).isoformat()
+
+
+def resolve_spans_output_file(output_dir: Path, *, filename: str | None = None) -> Path:
+    """根据配置决定 span 输出文件路径。
+
+    OTEL_TRACES_FILE_MODE:
+      - timestamp（默认）：每次进程启动一个文件，如 spans_20260612_143052.jsonl
+      - append / legacy：追加到 spans.jsonl
+    OTEL_TRACES_FILENAME：显式指定文件名（优先级最高）
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if filename:
+        return output_dir / filename
+
+    explicit = (os.getenv("OTEL_TRACES_FILENAME") or "").strip()
+    if explicit:
+        return output_dir / explicit
+
+    mode = (os.getenv("OTEL_TRACES_FILE_MODE") or "timestamp").strip().lower()
+    if mode in ("append", "legacy", "single"):
+        return output_dir / "spans.jsonl"
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return output_dir / f"spans_{stamp}.jsonl"
 
 
 def _serialize_value(value: AttributeValue) -> object:
@@ -60,12 +87,11 @@ def _span_to_dict(span) -> dict:
 
 
 class FileSpanExporter(SpanExporter):
-    """追加写入 `{output_dir}/spans.jsonl`，每行一个 span JSON。"""
+    """写入 `{output_dir}/spans_YYYYMMDD_HHMMSS.jsonl`（默认）或追加 spans.jsonl。"""
 
-    def __init__(self, output_dir: Path) -> None:
+    def __init__(self, output_dir: Path, *, filename: str | None = None) -> None:
         self._output_dir = Path(output_dir)
-        self._output_dir.mkdir(parents=True, exist_ok=True)
-        self._output_file = self._output_dir / "spans.jsonl"
+        self._output_file = resolve_spans_output_file(self._output_dir, filename=filename)
         self._lock = threading.Lock()
 
     @property

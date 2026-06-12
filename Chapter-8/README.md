@@ -62,20 +62,27 @@ Chroma 向量库：`Chapter-8/chroma_memory/`（`travel_multi_agent.config.CHROM
 | `OTEL_SERVICE_NAME` | `travel-multi-agent` | 服务名 |
 | `OTEL_TRACES_EXPORTER` | `console` | `console` / `file` / `otlp` / `none` |
 | `OTEL_TRACES_DIR` | `Chapter-8/traces/` | `file` 模式下 span 写入目录 |
+| `OTEL_TRACES_FILE_MODE` | `timestamp` | `timestamp` 按启动时间分文件；`append` 追加 `spans.jsonl` |
+| `OTEL_TRACES_FILENAME` | — | 显式指定文件名（优先级最高） |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | Jaeger/Tempo OTLP 地址 |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 | `LOG_JSON` | `false` | `true` 时输出 JSON 行 |
+| `OTEL_TRACES_SAMPLE_ALL` | `0` | `1` 时所有 span 采样（开发 / 测试） |
+| `OTEL_TRACE_ATTR_MAX_LEN` | `500` | attrs 截断长度 |
+| `OTEL_TRACE_RESULT_MAX_LEN` | `2000` | result event 截断 |
 
-Span 层级：
+Span 层级（latc 规范，前缀 `latc.travel-multi-agent`）：
 
 ```
-travel.request
+latc.travel-multi-agent.request
 ├── orchestration.pre_survey
+│   └── planner.pre_survey
 ├── orchestration.retrieve_memory
 ├── orchestration.build_plan
-├── orchestration.execute_layer.1
-│   └── agent.WeatherAgent
-│       └── event: tool.completed (tool.name=get_weather)
+│   └── planner.build_plan / planner.decomposition / planner.routing ...
+├── orchestration.execute_layer
+│   └── agent.invoke (agent.name=WeatherAgent)
+│       └── event: tool.completed / sub_agent_conversation
 ├── orchestration.aggregate
 └── orchestration.save_memory
 ```
@@ -92,11 +99,16 @@ OTEL_TRACES_EXPORTER=file
 OTEL_TRACES_DIR=D:/myproject/mira-ai-lab/agent-systems-book/Chapter-8/traces
 ```
 
-运行 `python scripts/run_demo.py` 后，span 会追加写入 `{OTEL_TRACES_DIR}/spans.jsonl`（每行一个 JSON）。用 `trace_id` 过滤即可查看单次请求：
+运行 `python scripts/run_demo.py` 后，span 会写入 `{OTEL_TRACES_DIR}/spans_YYYYMMDD_HHMMSS.jsonl`（每次进程启动一个新文件）。启动日志会打印 `output_file` 路径。用 `trace_id` 过滤即可查看单次请求：
 
 ```powershell
-Select-String -Path traces/spans.jsonl -Pattern "你的trace_id"
+# 查看最新一次 run 的文件（按修改时间排序）
+Get-ChildItem traces/spans_*.jsonl | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+Select-String -Path traces/spans_20260612_143052.jsonl -Pattern "你的trace_id"
 ```
+
+若希望恢复旧行为（所有 run 追加到同一文件），在 `.env` 中设置 `OTEL_TRACES_FILE_MODE=append`。
 
 ## 架构
 
@@ -123,6 +135,6 @@ print(result["final_response"])
 
 ## 子智能体
 
-WeatherAgent · AttractionAgent · HotelAgent · RestaurantAgent · FlightAgent · ItineraryAgent
+WeatherAgent · HotelAgent · RestaurantAgent · FlightAgent · ItineraryAgent
 
-详细说明见 `travel_multi_agent/orchestration/fixed_graph/` 内各模块 docstring。
+详细设计见 [docs/tracing_design.md](docs/tracing_design.md)。

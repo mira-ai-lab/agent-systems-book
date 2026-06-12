@@ -27,7 +27,9 @@ DEFAULT_QUERY = """
 大概是上海、苏州、杭州这几个地方？需要包含行程路线、酒店推荐、
 天气情况和美食攻略。我喜欢住安静的酒店，预算每晚不超过800元。
 """.strip()
-
+# DEFAULT_QUERY = """
+#今天北京的天气如何
+# """.strip()
 
 async def run_chat(orchestrator: LangGraphOrchestrator, stream: bool) -> None:
     mode = "流式" if stream else "批量"

@@ -1,20 +1,16 @@
-"""Span 工具：节点 / Agent / 工具调用的统一埋点。"""
+"""Span 工具：节点 / Agent / 工具调用的统一埋点（兼容层）。"""
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from typing import Any, Iterator, Optional
 
 from opentelemetry import trace
 from opentelemetry.trace import Span, Status, StatusCode
 
 from travel_multi_agent.tracing.logging_config import get_logger, log_info
+from travel_multi_agent.tracing.trace_provider import get_tracer, start_span_context
 
 logger = get_logger(__name__)
-
-
-def get_tracer() -> trace.Tracer:
-    return trace.get_tracer("travel_multi_agent")
 
 
 def _set_attrs(span: Span, attributes: dict[str, Any]) -> None:
@@ -23,21 +19,9 @@ def _set_attrs(span: Span, attributes: dict[str, Any]) -> None:
             span.set_attribute(key, value)
 
 
-@contextmanager
 def span(name: str, **attributes: Any) -> Iterator[Span]:
-    """创建当前 context 下的 OTel span。"""
-    with get_tracer().start_as_current_span(name) as current:
-        _set_attrs(current, attributes)
-        log_info(logger, "span.start", span=name, **attributes)
-        try:
-            yield current
-            current.set_status(Status(StatusCode.OK))
-            log_info(logger, "span.ok", span=name)
-        except Exception as exc:
-            attrs = dict(attributes)
-            step = attrs.pop("step", name)
-            record_exception(exc, step=step, **attrs)
-            raise
+    """创建当前 context 下的 OTel span（委托 trace_provider.start_span_context）。"""
+    return start_span_context(name, **attributes)
 
 
 def record_exception(
@@ -72,8 +56,9 @@ def record_tool_event(
     output_preview: Optional[str] = None,
 ) -> None:
     """在 agent span 上记录一次工具调用（LangChain tool message）。"""
-    current = trace.get_current_span()
-    attrs = {
+    from travel_multi_agent.tracing.trace_provider import current_trace_add_event
+
+    attrs: dict[str, Any] = {
         "tool.name": tool_name,
         "task.id": task_id,
         "agent.name": agent_name,
@@ -81,7 +66,7 @@ def record_tool_event(
     }
     if output_preview:
         attrs["tool.output_preview"] = output_preview[:500]
-    current.add_event("tool.completed", attrs)
+    current_trace_add_event("tool.completed", attrs)
     log_info(
         logger,
         "tool.completed",

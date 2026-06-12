@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List
 
-from travel_multi_agent.agents.attraction import create_attraction_agent
 from travel_multi_agent.agents.flight import create_flight_agent
 from travel_multi_agent.agents.hotel import create_hotel_agent
 from travel_multi_agent.agents.itinerary import create_itinerary_agent
@@ -16,7 +15,6 @@ logger = get_logger(__name__)
 
 _AGENT_CREATORS: Dict[str, Callable[[], Any]] = {
     "WeatherAgent": create_weather_agent,
-    "AttractionAgent": create_attraction_agent,
     "HotelAgent": create_hotel_agent,
     "RestaurantAgent": create_restaurant_agent,
     "FlightAgent": create_flight_agent,

@@ -7,13 +7,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Callable, Dict, List
+from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
+from opentelemetry import trace
 
 from travel_multi_agent.agents.factory import SubAgentFactory
 from travel_multi_agent.domain.agent_registry import SubAgentRegistry
+from travel_multi_agent.domain.plan_context import format_time_anchor_block
 from travel_multi_agent.domain.prompts import AGGREGATION_PROMPT
 from travel_multi_agent.domain.task_planner import TaskPlanner
 from travel_multi_agent.infra.memory.aggregation_helpers import (
@@ -22,7 +24,14 @@ from travel_multi_agent.infra.memory.aggregation_helpers import (
     is_single_direct_response,
 )
 from travel_multi_agent.infra.memory.memory_system import LongTermMemory
-from travel_multi_agent.tracing import get_logger, log_info, record_exception, record_tool_event, span
+from travel_multi_agent.tracing import (
+    current_trace_add_event,
+    get_logger,
+    log_info,
+    record_exception,
+    record_tool_event,
+    trace_span,
+)
 
 from .state import CentralAgentState
 from .stream_sink import StreamSink
@@ -158,10 +167,71 @@ def _tool_has_error(content: Any) -> bool:
     return False
 
 
+def _build_sub_agent_query(
+    task: Dict[str, Any],
+    prior_results: Dict[str, Any],
+) -> str:
+    """构造子 Agent 用户消息（通用框架层）。
+
+    只拼接通用的上下文信息，具体工具调用指令由：
+    - 子 Agent 的 System Prompt（agents/*.py）
+    - Planner 生成的 task.description
+    负责，不在编排层硬编码。
+    """
+    lines: List[str] = [format_time_anchor_block()]
+
+    desc = (task.get("description") or "").strip()
+    lines.append(desc or "请完成任务。")
+
+    params = task.get("params") or {}
+    if params:
+        lines.append(f"参数: {json.dumps(params, ensure_ascii=False)}")
+
+    for dep_id in task.get("depends_on", []):
+        if dep_id in prior_results:
+            dep_json = json.dumps(prior_results[dep_id], ensure_ascii=False)
+            if len(dep_json) > 2000:
+                dep_json = dep_json[:2000] + "..."
+            lines.append(f"依赖 {dep_id} 的结果: {dep_json}")
+
+    return "\n".join(lines)
+
+
+def _evaluate_subtask_status(
+    agent_name: str,
+    tool_outputs: List[Any],
+    registry: Any = None,
+) -> str:
+    """执行状态判断：优先从 registry 查询 requires_tool，registry 未提供时回退为「有 error 才 failed」。"""
+    requires_tool = False
+    if registry is not None and hasattr(registry, "requires_tool"):
+        requires_tool = registry.requires_tool(agent_name)
+    if requires_tool and not tool_outputs:
+        return "failed"
+    if tool_outputs and _tool_has_error(tool_outputs[-1]):
+        return "failed"
+    return "completed"
+
+
+def _pack_tool_data(tool_outputs: List[Any]) -> Any:
+    if not tool_outputs:
+        return None
+    if len(tool_outputs) == 1:
+        return tool_outputs[0]
+    return {"calls": tool_outputs, "count": len(tool_outputs)}
+
+
+@trace_span(
+    name="latc.travel-multi-agent.agent.invoke",
+    attrs_args=["task", "thread_id"],
+    parent_arg="trace_parent",
+)
 async def _invoke_sub_agent(
     task: Dict[str, Any],
     prior_results: Dict[str, Any],
     thread_id: str,
+    trace_parent: Optional[Any] = None,
+    registry: Any = None,
 ) -> Dict[str, Any]:
     """调用单个子 Agent：拼装描述 + 参数 + 上游依赖结果，解析 tool/ai 消息。
 
@@ -171,91 +241,96 @@ async def _invoke_sub_agent(
     """
     task_id = task["task_id"]
     agent_name = task.get("agent", "ItineraryAgent")
-    description = task.get("description", "")
 
-    query_parts = [description]
-    if task.get("params"):
-        query_parts.append(f"参数: {json.dumps(task['params'], ensure_ascii=False)}")
-    for dep_id in task.get("depends_on", []):
-        if dep_id in prior_results:
-            dep_json = json.dumps(prior_results[dep_id], ensure_ascii=False)
-            if len(dep_json) > 2000:
-                dep_json = dep_json[:2000] + "..."
-            query_parts.append(f"依赖 {dep_id} 的结果: {dep_json}")
+    query_text = _build_sub_agent_query(task, prior_results)
+    query_preview = query_text[:500]
 
-    with span(
-        f"agent.{agent_name}",
-        **{
-            "agent.name": agent_name,
-            "task.id": task_id,
-            "thread.id": thread_id,
-        },
-    ):
-        try:
-            agent = SubAgentFactory.get_agent(agent_name)
-            agent_state = await agent.ainvoke(
-                {"messages": [("user", "\n".join(query_parts))]},
-                {"configurable": {"thread_id": f"{thread_id}_{task_id}"}},
-            )
+    try:
+        agent = SubAgentFactory.get_agent(agent_name)
+        agent_state = await agent.ainvoke(
+            {"messages": [("user", query_text)]},
+            {"configurable": {"thread_id": f"{thread_id}_{task_id}"}},
+        )
 
-            tool_outputs: List[Any] = []
-            agent_text = ""
-            for msg in agent_state.get("messages", []):
-                if not hasattr(msg, "type"):
-                    continue
-                if msg.type == "tool" and hasattr(msg, "content"):
-                    content = msg.content
-                    tool_name = getattr(msg, "name", None) or f"{agent_name}.tool"
-                    parsed_content: Any = content
-                    try:
-                        if isinstance(content, str):
-                            parsed_content = json.loads(content)
-                    except (json.JSONDecodeError, TypeError):
-                        parsed_content = content
-                    tool_outputs.append(parsed_content)
-                    record_tool_event(
-                        tool_name,
-                        task_id=task_id,
-                        agent_name=agent_name,
-                        has_error=_tool_has_error(parsed_content),
-                        output_preview=str(content)[:200] if content else None,
-                    )
-                elif msg.type == "ai" and getattr(msg, "content", None):
-                    agent_text = msg.content
-
-            tool_data = tool_outputs[-1] if tool_outputs else None
-            status = "failed" if _tool_has_error(tool_data) else "completed"
-            if status == "failed":
-                log_info(
-                    logger,
-                    "agent.tool_error",
-                    agent=agent_name,
+        tool_outputs: List[Any] = []
+        agent_text = ""
+        for msg in agent_state.get("messages", []):
+            if not hasattr(msg, "type"):
+                continue
+            if msg.type == "tool" and hasattr(msg, "content"):
+                content = msg.content
+                tool_name = getattr(msg, "name", None) or f"{agent_name}.tool"
+                parsed_content: Any = content
+                try:
+                    if isinstance(content, str):
+                        parsed_content = json.loads(content)
+                except (json.JSONDecodeError, TypeError):
+                    parsed_content = content
+                tool_outputs.append(parsed_content)
+                record_tool_event(
+                    tool_name,
                     task_id=task_id,
-                    thread_id=thread_id,
+                    agent_name=agent_name,
+                    has_error=_tool_has_error(parsed_content),
+                    output_preview=str(content)[:200] if content else None,
                 )
+            elif msg.type == "ai" and getattr(msg, "content", None):
+                agent_text = msg.content
 
-            return {
-                "task_id": task_id,
-                "agent": agent_name,
-                "status": status,
-                "tool_data": tool_data,
-                "agent_summary": agent_text,
-            }
-        except Exception as exc:
-            record_exception(
-                exc,
-                step=f"agent.{agent_name}",
-                agent_name=agent_name,
+        tool_data = _pack_tool_data(tool_outputs)
+        status = _evaluate_subtask_status(agent_name, tool_outputs, registry=registry)
+        if status == "failed":
+            log_info(
+                logger,
+                "agent.tool_missing" if not tool_outputs else "agent.tool_error",
+                agent=agent_name,
                 task_id=task_id,
                 thread_id=thread_id,
+                tool_call_count=len(tool_outputs),
             )
-            return {
-                "task_id": task_id,
+
+        current_trace_add_event(
+            "sub_agent_conversation",
+            {
+                "query": query_preview,
                 "agent": agent_name,
+                "response": (agent_text or "")[:500],
+                "status": status,
+                "tool_call_count": len(tool_outputs),
+            },
+        )
+        return {
+            "task_id": task_id,
+            "agent": agent_name,
+            "status": status,
+            "tool_data": tool_data,
+            "tool_call_count": len(tool_outputs),
+            "agent_summary": agent_text,
+        }
+    except Exception as exc:
+        record_exception(
+            exc,
+            step="latc.travel-multi-agent.agent.invoke",
+            agent_name=agent_name,
+            task_id=task_id,
+            thread_id=thread_id,
+        )
+        current_trace_add_event(
+            "sub_agent_conversation",
+            {
+                "query": query_preview,
+                "agent": agent_name,
+                "response": "",
                 "status": "failed",
-                "tool_data": {"error": str(exc), "error_type": type(exc).__name__},
-                "agent_summary": "",
-            }
+            },
+        )
+        return {
+            "task_id": task_id,
+            "agent": agent_name,
+            "status": "failed",
+            "tool_data": {"error": str(exc), "error_type": type(exc).__name__},
+            "agent_summary": "",
+        }
 
 
 class GraphContext:
@@ -275,34 +350,18 @@ class GraphContext:
         self.stream_sink = stream_sink or StreamSink()
 
 
-def _traced_node(
-    step: str,
-    fn: Callable[[CentralAgentState], Any],
-) -> Callable[[CentralAgentState], Any]:
-    """为节点函数包装 tracing span；异常时 record_exception 后原样抛出。"""
-    async def wrapped(state: CentralAgentState) -> Dict[str, Any]:
-        thread_id = state.get("thread_id", "default")
-        with span(
-            f"orchestration.{step}",
-            step=step,
-            **{"thread.id": thread_id},
-        ):
-            try:
-                return await fn(state)
-            except Exception as exc:
-                record_exception(exc, step=step, thread_id=thread_id)
-                raise
-
-    return wrapped
-
-
 def make_nodes(ctx: GraphContext):
     """工厂：绑定 GraphContext 后返回 LangGraph 可用的节点函数字典。
 
     返回键：pre_survey / retrieve_memory / build_plan / execute_layer /
-            aggregate / save_memory。execute_layer 自带层级 span，不再二次包装。
+            aggregate / save_memory。
     """
 
+    @trace_span(
+        name="latc.travel-multi-agent.orchestration.pre_survey",
+        attrs_args=["state"],
+        record_result=False,
+    )
     async def pre_survey_node(state: CentralAgentState) -> Dict[str, Any]:
         """Ch2 节点：对用户请求做思维链预调查，写入 state.pre_survey。"""
         if _streaming(state):
@@ -320,6 +379,11 @@ def make_nodes(ctx: GraphContext):
             )
         return {"pre_survey": pre_survey, "logs": logs}
 
+    @trace_span(
+        name="latc.travel-multi-agent.orchestration.retrieve_memory",
+        attrs_args=["state"],
+        record_result=False,
+    )
     async def retrieve_memory_node(state: CentralAgentState) -> Dict[str, Any]:
         """Ch3 节点：按 user_query 检索长期记忆，供后续规划与聚合使用。"""
         logs = list(state.get("logs") or [])
@@ -344,8 +408,14 @@ def make_nodes(ctx: GraphContext):
         else:
             reason = "未启用" if not state.get("enable_memory", True) else "初始化失败"
             logs = _append_log({**state, "logs": logs}, f"\n🧠 [Ch3] 记忆已跳过（{reason}）")
+        current_trace_add_event("memory.retrieved", {"memory.count": len(memories)})
         return {"retrieved_memories": memories, "logs": logs}
 
+    @trace_span(
+        name="latc.travel-multi-agent.orchestration.build_plan",
+        attrs_args=["state"],
+        record_result=False,
+    )
     async def build_plan_node(state: CentralAgentState) -> Dict[str, Any]:
         """Ch4 节点：拆解子任务、分析依赖、路由 Agent，并预计算 pending_layers。"""
         if _streaming(state):
@@ -371,6 +441,14 @@ def make_nodes(ctx: GraphContext):
             layer_count=len(layers),
             thread_id=state.get("thread_id"),
         )
+        current_trace_add_event(
+            "plan.built",
+            {
+                "subtask.count": len(plan.get("subtasks", [])),
+                "layer.count": len(layers),
+                "execution.order": ",".join(plan.get("execution_order", [])),
+            },
+        )
         return {
             "execution_plan": plan,
             "total_goal": plan.get("total_goal", ""),
@@ -382,6 +460,11 @@ def make_nodes(ctx: GraphContext):
             "logs": logs,
         }
 
+    @trace_span(
+        name="latc.travel-multi-agent.orchestration.execute_layer",
+        attrs_args=["state"],
+        record_result=False,
+    )
     async def execute_layer_node(state: CentralAgentState) -> Dict[str, Any]:
         """Ch5+ 节点：执行当前层子任务；同层多任务并行，层内失败不阻断其余任务。"""
         layers = state.get("pending_layers") or []
@@ -395,54 +478,58 @@ def make_nodes(ctx: GraphContext):
             return {}
 
         layer = layers[idx]
-        layer_name = f"execute_layer.{idx + 1}"
-        with span(
-            f"orchestration.{layer_name}",
-            step=layer_name,
-            **{
-                "layer.index": idx + 1,
-                "layer.tasks": ",".join(layer),
-                "thread.id": thread_id,
-            },
-        ):
-            layer_msg = f"\n⚙️ [Ch5+] 执行第 {idx + 1}/{len(layers)} 层: {layer}"
+        layer_span = trace.get_current_span()
+        layer_span.set_attribute("layer.index", idx + 1)
+        layer_span.set_attribute("layer.tasks", ",".join(layer))
+        layer_span.set_attribute("thread.id", thread_id)
+
+        layer_msg = f"\n⚙️ [Ch5+] 执行第 {idx + 1}/{len(layers)} 层: {layer}"
+        if _streaming(state):
+            ctx.stream_sink.emit_progress(layer_msg)
+        logs = _append_log({**state, "logs": logs}, layer_msg)
+
+        tasks = [subtasks[tid] for tid in layer]
+        for task in tasks:
             if _streaming(state):
-                ctx.stream_sink.emit_progress(layer_msg)
-            logs = _append_log({**state, "logs": logs}, layer_msg)
+                tid = task["task_id"]
+                agent_name = task.get("agent", "ItineraryAgent")
+                ctx.stream_sink.emit_progress(f"  ▶ {tid} → {agent_name}")
+            logs = _log_subtask_start({**state, "logs": logs}, logs, task)
 
-            tasks = [subtasks[tid] for tid in layer]
-            for task in tasks:
-                if _streaming(state):
-                    tid = task["task_id"]
-                    agent_name = task.get("agent", "ItineraryAgent")
-                    ctx.stream_sink.emit_progress(f"  ▶ {tid} → {agent_name}")
-                logs = _log_subtask_start({**state, "logs": logs}, logs, task)
+        if len(tasks) == 1:
+            layer_results = [
+                await _invoke_sub_agent(tasks[0], results, thread_id, trace_parent=layer_span, registry=ctx.registry)
+            ]
+        else:
+            layer_results = list(await asyncio.gather(*[
+                _invoke_sub_agent(t, results, thread_id, trace_parent=layer_span, registry=ctx.registry) for t in tasks
+            ]))
 
-            if len(tasks) == 1:
-                layer_results = [await _invoke_sub_agent(tasks[0], results, thread_id)]
-            else:
-                layer_results = list(await asyncio.gather(*[
-                    _invoke_sub_agent(t, results, thread_id) for t in tasks
-                ]))
-
-            failed = [r for r in layer_results if r.get("status") == "failed"]
-            if failed:
-                log_info(
-                    logger,
-                    "layer.partial_failure",
-                    layer_index=idx + 1,
-                    failed_tasks=",".join(r["task_id"] for r in failed),
-                    thread_id=thread_id,
-                )
-
-            for res in layer_results:
-                results[res["task_id"]] = res
-                logs = _log_subtask_done({**state, "logs": logs}, logs, res)
-
-            logs = _append_log(
-                {**state, "logs": logs},
-                f"  ✓ 第 {idx + 1} 层全部完成（{len(layer_results)}/{len(layer)} 个子任务）",
+        failed = [r for r in layer_results if r.get("status") == "failed"]
+        if failed:
+            log_info(
+                logger,
+                "layer.partial_failure",
+                layer_index=idx + 1,
+                failed_tasks=",".join(r["task_id"] for r in failed),
+                thread_id=thread_id,
             )
+            current_trace_add_event(
+                "layer.partial_failure",
+                {
+                    "layer.index": idx + 1,
+                    "failed_tasks": ",".join(r["task_id"] for r in failed),
+                },
+            )
+
+        for res in layer_results:
+            results[res["task_id"]] = res
+            logs = _log_subtask_done({**state, "logs": logs}, logs, res)
+
+        logs = _append_log(
+            {**state, "logs": logs},
+            f"  ✓ 第 {idx + 1} 层全部完成（{len(layer_results)}/{len(layer)} 个子任务）",
+        )
 
         return {
             "subtask_results": results,
@@ -450,6 +537,11 @@ def make_nodes(ctx: GraphContext):
             "logs": logs,
         }
 
+    @trace_span(
+        name="latc.travel-multi-agent.orchestration.aggregate",
+        attrs_args=["state"],
+        record_result=False,
+    )
     async def aggregate_node(state: CentralAgentState) -> Dict[str, Any]:
         """聚合节点：单任务直出 / 带记忆 LLM 聚合 / 无记忆 AGGREGATION_PROMPT 三选一。"""
         if _streaming(state):
@@ -531,8 +623,17 @@ def make_nodes(ctx: GraphContext):
             trace=not stream,
         )
         logs = _append_log({**state, "logs": logs}, "=" * 80)
+        trace.get_current_span().set_attribute(
+            "final_response.length",
+            len(final_text or ""),
+        )
         return {"final_response": final_text, "logs": logs}
 
+    @trace_span(
+        name="latc.travel-multi-agent.orchestration.save_memory",
+        attrs_args=["state"],
+        record_result=False,
+    )
     async def save_memory_node(state: CentralAgentState) -> Dict[str, Any]:
         """Ch3 写回节点：记录对话轮次，并将用户请求 + 回复摘要写入长期偏好记忆。"""
         logs = list(state.get("logs") or [])
@@ -550,6 +651,7 @@ def make_nodes(ctx: GraphContext):
                 {**state, "logs": logs},
                 "\n💾 [Ch3] 已写入长期记忆（对话轮次 + 偏好摘要）",
             )
+            current_trace_add_event("memory.saved", {"memory.type": "preference"})
         else:
             reason = "未启用" if not state.get("enable_memory", True) else "初始化失败"
             logs = _append_log(
@@ -559,12 +661,12 @@ def make_nodes(ctx: GraphContext):
         return {"logs": logs}
 
     return {
-        "pre_survey": _traced_node("pre_survey", pre_survey_node),
-        "retrieve_memory": _traced_node("retrieve_memory", retrieve_memory_node),
-        "build_plan": _traced_node("build_plan", build_plan_node),
+        "pre_survey": pre_survey_node,
+        "retrieve_memory": retrieve_memory_node,
+        "build_plan": build_plan_node,
         "execute_layer": execute_layer_node,
-        "aggregate": _traced_node("aggregate", aggregate_node),
-        "save_memory": _traced_node("save_memory", save_memory_node),
+        "aggregate": aggregate_node,
+        "save_memory": save_memory_node,
     }
 
 

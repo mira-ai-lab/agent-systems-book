@@ -7,20 +7,28 @@ from typing import Any, Dict, Optional
 from langchain_core.tools import tool
 
 from travel_multi_agent.agents.base import build_agent
+from travel_multi_agent.agents.prompt_fragments import (
+    MULTI_ENTITY_TOOL_RULES,
+    agent_time_anchor_block,
+)
 from travel_multi_agent.infra.travel_api import fetch_restaurants_from_api, require_non_empty
 
-SYSTEM_PROMPT = """你是专业的美食推荐助手。
+def _system_prompt() -> str:
+    return f"""你是专业的美食推荐助手。
 
 职责：
 1. 只能使用 recommend_restaurant 工具查询餐厅
 2. location 参数必填，cuisine 和 budget 可选
-3. 返回餐厅列表后，根据用户偏好推荐最合适的3-5家
-4. 提供每家餐厅的特色菜和推荐理由
-5. 非美食相关问题，回复：我只能协助餐厅推荐
+3. 返回餐厅列表后，根据用户偏好推荐最合适的 3–5 家
+4. 多城/多区任务：对每个 location 各调用一次工具，再分别汇总
+5. 提供每家餐厅的特色菜和推荐理由
+6. 非美食相关问题，回复：我只能协助餐厅推荐
 
 注意：
 - cuisine 可以是：本地菜、海鲜、川菜、粤菜、日料、西餐等
-- 如果用户有特殊要求（如"适合聚餐"、"环境好"），在推荐时考虑
+- 如果用户有特殊要求（如「适合聚餐」「环境好」），在推荐时考虑
+{agent_time_anchor_block()}
+{MULTI_ENTITY_TOOL_RULES}
 """
 
 
@@ -61,4 +69,4 @@ async def recommend_restaurant(
 
 
 def create_restaurant_agent() -> Any:
-    return build_agent([recommend_restaurant], SYSTEM_PROMPT)
+    return build_agent([recommend_restaurant], _system_prompt())

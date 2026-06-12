@@ -1,4 +1,4 @@
-"""ItineraryAgent — 行程规划。"""
+"""ItineraryAgent — 候选 POI 拉取 + 确定性逐日行程骨架生成。"""
 
 from __future__ import annotations
 
@@ -8,57 +8,93 @@ from typing import Any, Dict, List, Optional
 from langchain_core.tools import tool
 
 from travel_multi_agent.agents.base import build_agent
+from travel_multi_agent.agents.prompt_fragments import (
+    MULTI_ENTITY_TOOL_RULES,
+    agent_time_anchor_block,
+)
 from travel_multi_agent.infra.travel_api import (
     build_itinerary_from_candidates,
     fetch_attractions_from_api,
-    fetch_hotels_from_api,
-    fetch_restaurants_from_api,
     require_non_empty,
 )
 
 
-@tool
-async def plan_itinerary(
-    departure_city: str,
-    destination_city: str,
-    days: int,
-    weather_summary: Optional[str] = None,
-    attraction_list: Optional[List[Dict[str, Any]]] = None,
-    preferences: Optional[str] = None,
-) -> Dict[str, Any]:
-    """综合各种信息生成详细的每日行程安排。"""
-    ok1, err1 = require_non_empty(departure_city, "departure_city")
-    if not ok1:
-        return {"error": err1}
+def _normalize_pois(raw: Any) -> List[Dict[str, Any]]:
+    """将 fetch_candidate_pois 返回值或 POI 列表规范化为 build 函数可用的 dict 列表。"""
+    if raw is None:
+        return []
+    if isinstance(raw, dict):
+        if "candidate_pois" in raw:
+            raw = raw["candidate_pois"]
+        elif "attractions" in raw:
+            raw = raw["attractions"]
+        else:
+            return []
+    if not isinstance(raw, list):
+        return []
+    return [p for p in raw if isinstance(p, dict) and (p.get("name") or p.get("title"))]
 
-    ok2, err2 = require_non_empty(destination_city, "destination_city")
-    if not ok2:
-        return {"error": err2}
+
+@tool
+async def fetch_candidate_pois(
+    city: str,
+    preferences: Optional[str] = None,
+    limit: int = 15,
+) -> Dict[str, Any]:
+    """拉取指定城市的候选兴趣点（景点 POI），供 plan_itinerary 生成逐日骨架。"""
+    ok, err = require_non_empty(city, "city")
+    if not ok:
+        return {"error": err}
 
     try:
-        if not attraction_list:
-            attr_result = await fetch_attractions_from_api(destination_city, limit=15)
-            attraction_list = attr_result.get("attractions", [])
+        result = await fetch_attractions_from_api(city, limit=limit)
+        if result.get("error"):
+            return {"error": result["error"]}
 
-        rest_result = await fetch_restaurants_from_api(destination_city, limit=10)
-        restaurant_list = rest_result.get("restaurants", [])
+        pois = result.get("attractions", [])
+        return {
+            "city": city,
+            "preferences": preferences,
+            "candidate_pois": pois[:limit],
+            "count": len(pois),
+            "data_source": result.get("data_source"),
+        }
+    except Exception as e:
+        return {"error": f"poi_query_failed: {str(e)}"}
 
-        hotel_result = await fetch_hotels_from_api(destination_city, limit=5)
-        hotel_list = hotel_result.get("hotels", [])
+
+@tool
+async def plan_itinerary(
+    city: str,
+    days: int = 3,
+    candidate_pois: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """根据候选 POI 确定性生成逐日行程骨架；未传 POI 时自动拉取。"""
+    ok, err = require_non_empty(city, "city")
+    if not ok:
+        return {"error": err}
+
+    n_days = max(1, min(int(days or 3), 14))
+    pois = _normalize_pois(candidate_pois)
+
+    try:
+        if not pois:
+            attr_result = await fetch_attractions_from_api(city, limit=15)
+            if attr_result.get("error"):
+                return {"error": attr_result["error"]}
+            pois = _normalize_pois(attr_result.get("attractions"))
 
         itinerary = build_itinerary_from_candidates(
-            departure_city=departure_city,
-            destination_city=destination_city,
-            days=days,
-            preferences=preferences,
-            attractions=attraction_list,
-            restaurants=restaurant_list,
-            hotels=hotel_list,
+            departure_city=city,
+            destination_city=city,
+            days=n_days,
+            attractions=pois,
+            restaurants=[],
+            hotels=[],
         )
-
-        if weather_summary:
-            itinerary["weather_summary"] = weather_summary
-
+        itinerary["city"] = city
+        itinerary["poi_count"] = len(pois)
+        itinerary["skeleton_note"] = "plan 字段为基于候选 POI 的确定性逐日骨架。"
         return itinerary
     except Exception as e:
         return {"error": f"itinerary_planning_failed: {str(e)}"}
@@ -71,21 +107,19 @@ def _system_prompt() -> str:
 当前日期（本地时间）：{today}
 
 职责：
-1. 只能使用 plan_itinerary 工具生成行程
-2. departure_city、destination_city、days 三个参数必填
-3. 综合考虑天气、景点、交通、住宿等因素
-4. 生成详细的每日行程（上午、下午、晚上）
-5. 提供交通建议、住宿推荐、注意事项
-6. 非行程规划问题，回复：我只能协助行程规划
+1. 多城任务：对每个城市先 fetch_candidate_pois(city)，再 plan_itinerary(city, days, candidate_pois=...)
+2. plan_itinerary 只需 city、days；candidate_pois 可传入上一步工具返回的 candidate_pois 列表
+3. 若未传 candidate_pois，plan_itinerary 会自动拉取该城 POI
+4. 拿到 plan 骨架后，用中文润色并补充交通/注意事项（可结合任务描述中的天气、酒店等信息）
+5. 非行程规划问题，回复：我只能协助行程规划
 
 注意：
-- 行程安排要合理，考虑景点间的距离和游览时间
-- 每天安排2-3个主要景点，避免过于紧凑
-- 预留用餐时间和休息时间
-- 考虑天气因素给出出行建议
-- 用户说「今天」时必须对应当前日期 {today}，不要臆造其他日期
+- plan 骨架中的 POI 名称不要臆改
+- 每天 2–3 个 POI，避免过满
+{agent_time_anchor_block()}
+{MULTI_ENTITY_TOOL_RULES}
 """
 
 
 def create_itinerary_agent() -> Any:
-    return build_agent([plan_itinerary], _system_prompt())
+    return build_agent([fetch_candidate_pois, plan_itinerary], _system_prompt())

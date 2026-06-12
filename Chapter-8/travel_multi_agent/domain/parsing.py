@@ -122,8 +122,8 @@ def guess_agent(description: str) -> str:
         return "WeatherAgent"
     if any(k in desc for k in ("酒店", "hotel", "住宿", "民宿")):
         return "HotelAgent"
-    if any(k in desc for k in ("景点", "attraction", "打卡", "景区")):
-        return "AttractionAgent"
+    if any(k in desc for k in ("景点", "attraction", "打卡", "景区", "行程", "攻略")):
+        return "ItineraryAgent"
     if any(k in desc for k in ("餐厅", "美食", "restaurant", "菜")):
         return "RestaurantAgent"
     if any(k in desc for k in ("航班", "flight", "飞机")):

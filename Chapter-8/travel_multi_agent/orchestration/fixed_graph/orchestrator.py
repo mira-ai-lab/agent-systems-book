@@ -15,7 +15,7 @@ from langchain_openai import ChatOpenAI
 from travel_multi_agent.config import CHROMA_DIR, create_llm, load_project_dotenv
 from travel_multi_agent.domain.prompts import CENTRAL_AGENT_SYSTEM_PROMPT
 from travel_multi_agent.infra.memory.memory_factory import create_long_term_memory, resolve_memory_backend
-from travel_multi_agent.tracing import get_logger, get_trace_ids, log_info, setup_observability, span
+from travel_multi_agent.tracing import get_logger, get_current_span_context, log_info, setup_observability, trace_span
 
 from .graph import compile_graph
 from .state import CentralAgentState
@@ -103,6 +103,10 @@ class LangGraphOrchestrator:
         self.stream_sink.on_token = _write_token
         self.stream_sink.on_progress = lambda msg: print(msg, flush=True)
 
+    @trace_span(
+        name="latc.travel-multi-agent.request",
+        attrs_args=["user_query", "thread_id"],
+    )
     async def process_request(
         self,
         user_query: str,
@@ -114,36 +118,33 @@ class LangGraphOrchestrator:
         返回字典含 execution_plan / subtask_results / final_response / logs /
         graph_state（完整终态）/ trace_id / span_id。
         """
-        with span(
-            "travel.request",
-            **{
-                "thread.id": thread_id,
-                "user.query_length": len(user_query.strip()),
-            },
-        ):
-            log_info(
-                logger,
-                "request.start",
-                thread_id=thread_id,
-                query_preview=user_query.strip()[:120],
-            )
+        log_info(
+            logger,
+            "request.start",
+            thread_id=thread_id,
+            query_preview=user_query.strip()[:120],
+        )
 
-            initial_state = self._build_initial_state(user_query, thread_id, enable_stream=False)
-            config = {"configurable": {"thread_id": thread_id}}
-            final_state = await self.app.ainvoke(initial_state, config)
+        initial_state = self._build_initial_state(user_query, thread_id, enable_stream=False)
+        config = {"configurable": {"thread_id": thread_id}}
+        final_state = await self.app.ainvoke(initial_state, config)
 
-            trace_id, span_id = get_trace_ids()
-            log_info(
-                logger,
-                "request.done",
-                thread_id=thread_id,
-                trace_id=trace_id,
-                span_id=span_id,
-                subtask_count=len(final_state.get("subtask_results") or {}),
-            )
+        trace_id, span_id = get_current_span_context()
+        log_info(
+            logger,
+            "request.done",
+            thread_id=thread_id,
+            trace_id=trace_id,
+            span_id=span_id,
+            subtask_count=len(final_state.get("subtask_results") or {}),
+        )
 
-            return self._result_from_state(final_state, trace_id, span_id)
+        return self._result_from_state(final_state, trace_id, span_id)
 
+    @trace_span(
+        name="latc.travel-multi-agent.request",
+        attrs_args=["user_query", "thread_id"],
+    )
     async def process_request_stream(
         self,
         user_query: str,
@@ -155,49 +156,46 @@ class LangGraphOrchestrator:
         """
         self._attach_stdout_stream_handlers()
         try:
-            with span(
-                "travel.request",
-                **{
-                    "thread.id": thread_id,
-                    "user.query_length": len(user_query.strip()),
-                    "stream": True,
-                },
-            ):
-                print("\n" + "=" * 60)
-                print(f"📥 用户：{user_query.strip()}")
-                print("=" * 60)
+            print("\n" + "=" * 60)
+            print(f"📥 用户：{user_query.strip()}")
+            print("=" * 60)
 
-                log_info(
-                    logger,
-                    "request.start",
-                    thread_id=thread_id,
-                    query_preview=user_query.strip()[:120],
-                    stream=True,
-                )
+            log_info(
+                logger,
+                "request.start",
+                thread_id=thread_id,
+                query_preview=user_query.strip()[:120],
+                stream=True,
+            )
 
-                initial_state = self._build_initial_state(user_query, thread_id, enable_stream=True)
-                config = {"configurable": {"thread_id": thread_id}}
+            initial_state = self._build_initial_state(user_query, thread_id, enable_stream=True)
+            config = {"configurable": {"thread_id": thread_id}}
 
-                async for _ in self.app.astream(initial_state, config, stream_mode="updates"):
-                    pass
+            async for _ in self.app.astream(initial_state, config, stream_mode="updates"):
+                pass
 
-                snapshot = await self.app.aget_state(config)
-                final_state = dict(snapshot.values) if snapshot and snapshot.values else {}
+            snapshot = await self.app.aget_state(config)
+            final_state = dict(snapshot.values) if snapshot and snapshot.values else {}
 
-                trace_id, span_id = get_trace_ids()
-                log_info(
-                    logger,
-                    "request.done",
-                    thread_id=thread_id,
-                    trace_id=trace_id,
-                    span_id=span_id,
-                    subtask_count=len(final_state.get("subtask_results") or {}),
-                    stream=True,
-                )
-                return self._result_from_state(final_state, trace_id, span_id)
+            trace_id, span_id = get_current_span_context()
+            log_info(
+                logger,
+                "request.done",
+                thread_id=thread_id,
+                trace_id=trace_id,
+                span_id=span_id,
+                subtask_count=len(final_state.get("subtask_results") or {}),
+                stream=True,
+            )
+            return self._result_from_state(final_state, trace_id, span_id)
         finally:
             self.stream_sink.reset()
 
+    @trace_span(
+        name="latc.travel-multi-agent.request.stream",
+        attrs_args=["user_query", "thread_id"],
+        record_result=False,
+    )
     async def iter_request_stream(
         self,
         user_query: str,
