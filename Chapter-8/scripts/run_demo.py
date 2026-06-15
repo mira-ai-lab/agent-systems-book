@@ -6,6 +6,12 @@ import argparse
 import asyncio
 import sys
 import uuid
+from pathlib import Path
+
+# 允许在 scripts/ 下直接运行：python run_demo.py
+_CHAPTER8_ROOT = Path(__file__).resolve().parent.parent
+if str(_CHAPTER8_ROOT) not in sys.path:
+    sys.path.insert(0, str(_CHAPTER8_ROOT))
 
 if sys.platform == "win32":
     for stream in (sys.stdout, sys.stderr):
@@ -14,9 +20,9 @@ if sys.platform == "win32":
         except Exception:
             pass
 
-from travel_multi_agent.config import load_project_dotenv
-from travel_multi_agent.orchestration.fixed_graph.orchestrator import LangGraphOrchestrator
-from travel_multi_agent.tracing import get_logger, log_info, setup_observability
+from agent_framework.config import load_project_dotenv
+from agent_framework.orchestration.fixed_graph.orchestrator import LangGraphOrchestrator
+from agent_framework.tracing import get_logger, log_info, setup_observability
 
 load_project_dotenv()
 setup_observability()
@@ -28,7 +34,7 @@ DEFAULT_QUERY = """
 天气情况和美食攻略。我喜欢住安静的酒店，预算每晚不超过800元。
 """.strip()
 # DEFAULT_QUERY = """
-#今天北京的天气如何
+# 北京未来2周的天气如何
 # """.strip()
 
 async def run_chat(orchestrator: LangGraphOrchestrator, stream: bool) -> None:
@@ -65,7 +71,10 @@ async def main() -> None:
     parser.add_argument("--no-graph", action="store_true", help="跳过打印/保存图结构")
     args = parser.parse_args()
 
-    orchestrator = LangGraphOrchestrator(enable_memory=False)
+    orchestrator = LangGraphOrchestrator(
+        enable_memory=False,
+        enable_guess_agent=True,
+    )
 
     if not args.no_graph:
         print("\n--- LangGraph 工作流结构 ---")

@@ -1,0 +1,28 @@
+============================================================
+LangGraph StateGraph — 自动导出的图结构
+============================================================
+
+节点数: 6
+边数:   6
+
+【节点】
+  • __end__  (terminal)
+  • __start__  (RunnableCallable)
+  • aggregate  (RunnableCallable)
+  • build_plan  (RunnableCallable)
+  • execute_layer  (RunnableCallable)
+  • pre_survey  (RunnableCallable)
+
+【边】
+  • [固定边] __start__ → pre_survey
+  • [固定边] build_plan → execute_layer
+  • [条件边] execute_layer → aggregate
+  • [条件边] execute_layer → execute_layer
+  • [固定边] pre_survey → build_plan
+  • [固定边] aggregate → __end__
+
+============================================================
+
+--- ASCII (LangGraph) ---
+ASCII 生成失败（LangGraph/grandalf 对自循环条件边支持有限）: no intersection found (point inside ?!). view: <langchain_core.runnables.graph_ascii.VertexViewer object at 0x0000022A4B562110> topt: (0.0, 19.5)
+  请使用 output/*.png 或 *.mmd 查看图结构

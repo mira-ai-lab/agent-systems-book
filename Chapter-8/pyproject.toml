@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "travel-multi-agent"
 version = "0.2.0"
-description = "Travel multi-agent orchestration with LangGraph fixed graph"
+description = "Multi-agent orchestration framework with LangGraph fixed graph"
 requires-python = ">=3.10"
 dependencies = [
     "langchain>=0.1.0",
@@ -30,7 +30,7 @@ dev = ["pytest>=7.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["travel_multi_agent*"]
+include = ["travel_multi_agent*", "agent_framework*", "domains*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

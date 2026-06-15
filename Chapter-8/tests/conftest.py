@@ -2,7 +2,7 @@
 
 import pytest
 
-from travel_multi_agent.tracing import shutdown_tracing
+from agent_framework.tracing import shutdown_tracing
 
 
 @pytest.fixture(scope="session", autouse=True)

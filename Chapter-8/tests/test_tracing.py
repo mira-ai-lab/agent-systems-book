@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from travel_multi_agent.tracing import get_current_span_context, setup_observability, span
+from agent_framework.tracing import get_current_span_context, setup_observability, span
 
 
 @pytest.fixture(autouse=True)
@@ -37,7 +37,7 @@ def test_file_exporter_writes_spans(tmp_path):
 
     from opentelemetry.trace import SpanKind, StatusCode
 
-    from travel_multi_agent.tracing.file_exporter import FileSpanExporter
+    from agent_framework.tracing.file_exporter import FileSpanExporter
 
     ctx = SimpleNamespace(trace_id=0xABC, span_id=0x123)
     status = SimpleNamespace(status_code=StatusCode.OK, description="")
@@ -65,7 +65,7 @@ def test_file_exporter_writes_spans(tmp_path):
 
 
 def test_file_exporter_timestamp_mode(tmp_path, monkeypatch):
-    from travel_multi_agent.tracing.file_exporter import FileSpanExporter, resolve_spans_output_file
+    from agent_framework.tracing.file_exporter import FileSpanExporter, resolve_spans_output_file
 
     monkeypatch.setenv("OTEL_TRACES_FILE_MODE", "timestamp")
     monkeypatch.delenv("OTEL_TRACES_FILENAME", raising=False)

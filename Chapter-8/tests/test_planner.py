@@ -1,12 +1,14 @@
 """TaskPlanner 与规划上下文单元测试（不调用 LLM）。"""
 from datetime import date
 
-from travel_multi_agent.domain.agent_registry import SubAgentRegistry
-from travel_multi_agent.domain.parsing import guess_agent, parse_pre_survey
-from travel_multi_agent.domain.plan_context import build_time_anchor, format_time_anchor_block
+from domains.travel.plan_context import build_time_anchor, format_time_anchor_block
+from domains.travel.prompt_bundle import TravelPrompts
+from domains.travel.specs import create_travel_registry_stub
 
 
 def test_parse_pre_survey_sections():
+    from agent_framework.domain.parsing import parse_pre_survey
+
     raw = """
         1. 已给出或已验证的事实
         - 用户想去上海
@@ -24,13 +26,14 @@ def test_parse_pre_survey_sections():
     assert result["educated_guesses"]
 
 
-def test_agent_registry_lists_five_agents():
-    registry = SubAgentRegistry()
+def test_travel_registry_lists_five_agents():
+    registry = create_travel_registry_stub()
     assert len(registry.agents) == 5
     assert "WeatherAgent" in registry.agents
     assert "ItineraryAgent" in registry.agents
     assert "AttractionAgent" not in registry.agents
     assert registry.requires_tool("ItineraryAgent")
+    assert registry.guess_agent("查询北京明天天气") == "WeatherAgent"
     text = registry.get_all_agents_text()
     assert "ItineraryAgent" in text
     params = registry.get_agent_parameters_text()
@@ -38,10 +41,27 @@ def test_agent_registry_lists_five_agents():
     assert "plan_itinerary" in params
 
 
-def test_guess_agent():
-    assert guess_agent("查询北京明天天气") == "WeatherAgent"
-    assert guess_agent("推荐附近酒店") == "HotelAgent"
-    assert guess_agent("上海有哪些打卡景点") == "ItineraryAgent"
+def test_registry_register_guess_rules():
+    registry = create_travel_registry_stub()
+    assert registry.guess_agent("推荐附近酒店") == "HotelAgent"
+    assert registry.guess_agent("随便聊聊") is None
+
+
+def test_travel_prompts_build():
+    prompts = TravelPrompts.build()
+    assert "旅行" in prompts.central_agent_system
+    assert "旅行助手" in prompts.aggregation
+    assert prompts.multi_task_title
+
+
+def test_pipeline_config():
+    from agent_framework.domain.pipeline import PipelineConfig
+
+    full = PipelineConfig()
+    assert full.enable_pre_survey and full.enable_memory
+    minimal = PipelineConfig(enable_pre_survey=False, enable_memory=False)
+    assert not minimal.enable_pre_survey
+    assert not minimal.needs_save_memory
 
 
 def test_build_time_anchor_next_week():

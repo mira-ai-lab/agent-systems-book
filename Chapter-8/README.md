@@ -2,25 +2,39 @@
 
 整合 **Chapter-2 / 3 / 4 / 5** 的能力，通过 **LangGraph StateGraph** 实现中心调度 → 子智能体分层执行 → 汇聚结果。
 
+代码分为 **通用框架** 与 **旅行领域插件** 两层，便于换领域时只替换 `domains/<name>/`，编排与追踪逻辑复用。
+
 ## 目录结构
 
 ```
 Chapter-8/
 ├── pyproject.toml
 ├── requirements.txt
-├── travel_multi_agent/                   # Python 包（唯一代码根）
-│   ├── config.py               # paths + dotenv + create_llm
-│   ├── domain/
-│   ├── agents/
-│   ├── infra/
+├── agent_framework/              # 通用：编排 + 追踪 + domain 层
+│   ├── config.py                 # paths + dotenv + create_llm
+│   ├── domain/                   # registry / planner / pipeline / parsing …
 │   ├── orchestration/fixed_graph/
-│   └── tracing/
+│   ├── tracing/
+│   └── infra/memory/
+├── domains/
+│   └── travel/                   # 旅行领域唯一实现
+│       ├── agents/               # Weather / Hotel / Restaurant / Flight / Itinerary
+│       ├── prompts.py
+│       ├── specs.py
+│       ├── registry.py           # create_travel_registry()
+│       └── infra/                # travel_api / weather_mcp
+├── travel_multi_agent/           # 向后兼容 re-export（旧 import 仍可用）
+├── book/                         # 书稿示例与 Agent 定义说明
 ├── scripts/
 │   ├── run_demo.py
-│   └── show_graph.py
+│   ├── show_graph.py
+│   └── test_weather_agent.py
+├── docs/
+│   └── tracing_design.md
 └── tests/
     ├── test_planner.py
-    └── test_tracing.py
+    ├── test_tracing.py
+    └── test_trace_provider.py
 ```
 
 ## 安装（必做）
@@ -34,7 +48,7 @@ pip install -e .
 pip install -e ".[dev]"
 ```
 
-未执行 `pip install -e .` 时，直接运行 `scripts/run_demo.py` 会报 `ModuleNotFoundError: travel_multi_agent`。
+未执行 `pip install -e .` 时，直接运行 `scripts/run_demo.py` 会报 `ModuleNotFoundError`（找不到 `agent_framework` / `domains`）。
 
 **IntelliJ IDEA**：将 `Chapter-8` 标记为 Sources Root（仓库 `.idea` 已配置），并确认 Project SDK 为上述 conda 环境。修改后可在 IDEA 中 **File → Invalidate Caches** 刷新索引。
 
@@ -53,13 +67,13 @@ pip install -e ".[dev]"
 - `DASHSCOPE_API_KEY` — 百炼大模型
 - `AMAP_KEY` / `BAIDU_MAP_AK` — 地图 POI（可选）
 
-Chroma 向量库：`Chapter-8/chroma_memory/`（`travel_multi_agent.config.CHROMA_DIR`）
+Chroma 向量库：`Chapter-8/chroma_memory/`（`agent_framework.config.CHROMA_DIR`）
 
 ### 可观测性（OpenTelemetry + 结构化日志）
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `OTEL_SERVICE_NAME` | `travel-multi-agent` | 服务名 |
+| `OTEL_SERVICE_NAME` | `travel-multi-agent` | 服务名（span 前缀由此派生） |
 | `OTEL_TRACES_EXPORTER` | `console` | `console` / `file` / `otlp` / `none` |
 | `OTEL_TRACES_DIR` | `Chapter-8/traces/` | `file` 模式下 span 写入目录 |
 | `OTEL_TRACES_FILE_MODE` | `timestamp` | `timestamp` 按启动时间分文件；`append` 追加 `spans.jsonl` |
@@ -71,7 +85,7 @@ Chroma 向量库：`Chapter-8/chroma_memory/`（`travel_multi_agent.config.CHROM
 | `OTEL_TRACE_ATTR_MAX_LEN` | `500` | attrs 截断长度 |
 | `OTEL_TRACE_RESULT_MAX_LEN` | `2000` | result event 截断 |
 
-Span 层级（latc 规范，前缀 `latc.travel-multi-agent`）：
+Span 层级（前缀由 `OTEL_SERVICE_NAME` 派生，默认类似 `latc.travel-multi-agent`）：
 
 ```
 latc.travel-multi-agent.request
@@ -112,29 +126,66 @@ Select-String -Path traces/spans_20260612_143052.jsonl -Pattern "你的trace_id"
 
 ## 架构
 
+**运行时流水线：**
+
 ```
 用户请求
   → [Ch2] 思维链预调查
   → [Ch3] 长期记忆检索
-  → [Ch4] 任务拆解 → 依赖排序
-  → [Ch5+] 6 个子智能体执行（execute_layer 按层循环）
+  → [Ch4] 任务拆解 → 依赖排序 → 子 Agent 路由
+  → [Ch5+] 5 个子智能体按层并行执行（execute_layer 循环）
   → 聚合 → [Ch3] 写入记忆
+```
+
+**包职责：**
+
+```
+agent_framework     orchestration + tracing + 通用 domain（与业务无关）
+domains/travel      agents / prompts / specs / infra（旅行领域实现）
+travel_multi_agent  兼容层 re-export（历史 import，新代码可不使用）
 ```
 
 ## 代码中使用
 
+**推荐（新代码）：**
+
 ```python
-from travel_multi_agent.config import load_project_dotenv
-from travel_multi_agent.orchestration.fixed_graph import LangGraphOrchestrator
+from agent_framework.config import load_project_dotenv
+from agent_framework.domain.pipeline import PipelineConfig
+from agent_framework.orchestration.fixed_graph import LangGraphOrchestrator
+from domains.travel import TravelPrompts, create_travel_registry, travel_domain_config
+
+load_project_dotenv()
+
+orchestrator = LangGraphOrchestrator(
+    registry=create_travel_registry(),
+    prompts=TravelPrompts.build(),
+    domain_config=travel_domain_config(enable_guess_agent=True),
+    pipeline=PipelineConfig(enable_pre_survey=True, enable_memory=True),
+)
+result = await orchestrator.process_request("查询上海明天天气")
+print(result["final_response"])
+```
+
+**简化入口（使用默认旅行 demo 配置）：**
+
+```python
+from agent_framework.config import load_project_dotenv
+from agent_framework.orchestration.fixed_graph import LangGraphOrchestrator
 
 load_project_dotenv()
 orchestrator = LangGraphOrchestrator(enable_memory=True)
 result = await orchestrator.process_request("查询上海明天天气")
-print(result["final_response"])
+```
+
+**向后兼容（旧 import 仍可用）：**
+
+```python
+from travel_multi_agent.orchestration.fixed_graph import LangGraphOrchestrator
 ```
 
 ## 子智能体
 
 WeatherAgent · HotelAgent · RestaurantAgent · FlightAgent · ItineraryAgent
 
-详细设计见 [docs/tracing_design.md](docs/tracing_design.md)。
+详细设计见 [docs/tracing_design.md](docs/tracing_design.md)；书稿侧 Agent 契约说明见 [book/agent_definitions.py](book/agent_definitions.py)。

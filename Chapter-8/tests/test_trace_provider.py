@@ -6,17 +6,18 @@ import asyncio
 
 import pytest
 
-from travel_multi_agent.tracing import (
+from agent_framework.tracing import (
     current_trace_add_event,
     get_current_span_context,
     setup_observability,
     span,
     trace_span,
 )
-from travel_multi_agent.tracing.trace_provider import (
+from agent_framework.tracing.trace_provider import (
     LATC_PREFIX,
     LatcPrefixSampler,
     serialize_for_trace,
+    span_name,
 )
 
 
@@ -32,10 +33,15 @@ def test_setup_observability_idempotent():
 
 def test_latc_prefix_sampler():
     sampler = LatcPrefixSampler(sample_all=False)
-    latc = sampler.should_sample(None, 1, "latc.travel-multi-agent.request")
+    latc = sampler.should_sample(None, 1, span_name("request"))
     other = sampler.should_sample(None, 1, "travel.request")
     assert latc.decision.name == "RECORD_AND_SAMPLE"
     assert other.decision.name == "DROP"
+
+
+def test_span_name_uses_service_name(monkeypatch):
+    monkeypatch.setenv("OTEL_SERVICE_NAME", "my-custom-agent")
+    assert span_name("request") == "latc.my-custom-agent.request"
 
 
 def test_serialize_state_whitelist():

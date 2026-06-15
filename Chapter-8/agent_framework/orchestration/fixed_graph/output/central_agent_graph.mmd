@@ -1,0 +1,21 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	pre_survey(pre_survey)
+	build_plan(build_plan)
+	execute_layer(execute_layer)
+	aggregate(aggregate)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> pre_survey;
+	build_plan --> execute_layer;
+	execute_layer -.-> aggregate;
+	pre_survey --> build_plan;
+	aggregate --> __end__;
+	execute_layer -.-> execute_layer;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

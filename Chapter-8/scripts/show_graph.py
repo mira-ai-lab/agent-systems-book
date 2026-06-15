@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+
+# 允许在 scripts/ 下直接运行：python show_graph.py
+_CHAPTER8_ROOT = Path(__file__).resolve().parent.parent
+if str(_CHAPTER8_ROOT) not in sys.path:
+    sys.path.insert(0, str(_CHAPTER8_ROOT))
 
 if sys.platform == "win32":
     for stream in (sys.stdout, sys.stderr):
@@ -11,7 +17,7 @@ if sys.platform == "win32":
         except Exception:
             pass
 
-from travel_multi_agent.orchestration.fixed_graph.visualize import GraphVisualizer
+from agent_framework.orchestration.fixed_graph.visualize import GraphVisualizer
 
 
 def main() -> None:
