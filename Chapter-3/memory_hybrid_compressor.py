@@ -113,9 +113,12 @@ class MemoryCompressor:
     def __init__(self, llm):
         self.llm = llm
 
-    def _invoke_json(self, prompt: str, *, retries: int = 2) -> Dict[str, Any]:
+    def _call_llm_and_parse_structured_memory_json(
+        self, prompt: str, *, max_attempts: int = 2
+    ) -> Dict[str, Any]:
+        """调用 LLM 获取结构化记忆 JSON；解析失败时追加约束并重试。"""
         last_err: Optional[Exception] = None
-        for attempt in range(retries):
+        for attempt in range(max_attempts):
             p = prompt if attempt == 0 else (
                 prompt.rstrip()
                 + "\n\n请只输出一个合法 JSON 对象，不要 markdown、不要解释。"
@@ -153,7 +156,7 @@ class MemoryCompressor:
         importance 为 0.0 到 1.0 之间的数字。"""
 
         try:
-            extracted = self._invoke_json(prompt)
+            extracted = self._call_llm_and_parse_structured_memory_json(prompt)
         except Exception:
             return self._fallback_extract(content, metadata)
 
@@ -188,7 +191,7 @@ class MemoryCompressor:
         }}"""
 
         try:
-            merged = self._invoke_json(prompt)
+            merged = self._call_llm_and_parse_structured_memory_json(prompt)
         except Exception:
             base = memories[0]
             return {
