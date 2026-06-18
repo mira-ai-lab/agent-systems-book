@@ -60,7 +60,9 @@ Chapter-8/
 │   └── demo/                     # 最小插件模板
 ├── book/                         # 书稿示例与 Agent 定义说明
 ├── scripts/
-│   ├── run_demo.py
+│   ├── run_router.py             # Router 产品入口（最小示例，推荐）
+│   ├── run.py                    # legacy：直连 LangGraphOrchestrator
+│   ├── run_demo.py               # 完整 CLI 演示
 │   ├── show_graph.py
 │   ├── test_weather_agent.py
 │   └── travel_agent_mcp_server.py   # Claude Code / MCP 客户端接入
@@ -98,6 +100,9 @@ pytest
 
 | 用途 | 命令 |
 |------|------|
+| **Router 产品入口（推荐）** | `python scripts/run_router.py` |
+| legacy 直连 Fixed Graph | `python scripts/run.py` |
+| 流式 / 完整 CLI | `python scripts/run_demo.py --domain travel --profile workflow --stream` |
 | 查看图结构（无需 API Key） | `python scripts/show_graph.py` |
 | 完整演示 | `python scripts/run_demo.py` |
 | 单元测试 | `pytest` |
@@ -292,36 +297,59 @@ domains/travel      agents / prompts / specs / infra（旅行领域实现）
 
 ## 代码中使用
 
-**推荐（新代码）：**
+**Router 产品入口（推荐）：**
 
 ```python
+import asyncio
+
+from agent_framework.bootstrap import route
+from agent_framework.config import load_project_dotenv
+
+
+async def main() -> None:
+    load_project_dotenv()
+    result = await route(
+        "查询上海明天天气",
+        domain="travel",
+        profile="workflow",
+    )
+    print(result["final_response"])
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+或直接运行：`python scripts/run_router.py`
+
+**legacy 书稿路径（直连 LangGraphOrchestrator，不经 Router）：**
+
+```python
+import asyncio
+
 from agent_framework.config import load_project_dotenv
 from agent_framework.domain.pipeline import PipelineConfig
 from agent_framework.orchestration.fixed_graph import LangGraphOrchestrator
 from domains.travel import TravelPrompts, create_travel_registry, travel_domain_config
 
-load_project_dotenv()
 
-orchestrator = LangGraphOrchestrator(
-    registry=create_travel_registry(),
-    prompts=TravelPrompts.build(),
-    domain_config=travel_domain_config(enable_guess_agent=True),
-    pipeline=PipelineConfig(enable_pre_survey=True, enable_memory=True),
-)
-result = await orchestrator.process_request("查询上海明天天气")
-print(result["final_response"])
+async def main() -> None:
+    load_project_dotenv()
+    orchestrator = LangGraphOrchestrator(
+        registry=create_travel_registry(),
+        prompts=TravelPrompts.build(),
+        domain_config=travel_domain_config(enable_guess_agent=True),
+        pipeline=PipelineConfig(enable_pre_survey=True, enable_memory=True),
+    )
+    result = await orchestrator.process_request("查询上海明天天气")
+    print(result["final_response"])
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-**简化入口（使用默认旅行 demo 配置）：**
-
-```python
-from agent_framework.config import load_project_dotenv
-from agent_framework.orchestration.fixed_graph import LangGraphOrchestrator
-
-load_project_dotenv()
-orchestrator = LangGraphOrchestrator(enable_memory=True)
-result = await orchestrator.process_request("查询上海明天天气")
-```
+见 `scripts/run.py`。
 
 ## 子智能体
 
