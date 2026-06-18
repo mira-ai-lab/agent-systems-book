@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "travel-agent": {
+      "type": "stdio",
+      "command": "D:\\conda\\python.exe",
+      "args": [
+        "scripts/travel_agent_mcp_server.py"
+      ]
+    }
+  }
+}

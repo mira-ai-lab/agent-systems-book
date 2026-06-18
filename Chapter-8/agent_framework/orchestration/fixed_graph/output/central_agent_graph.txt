@@ -24,5 +24,5 @@ LangGraph StateGraph — 自动导出的图结构
 ============================================================
 
 --- ASCII (LangGraph) ---
-ASCII 生成失败（LangGraph/grandalf 对自循环条件边支持有限）: no intersection found (point inside ?!). view: <langchain_core.runnables.graph_ascii.VertexViewer object at 0x0000022A4B562110> topt: (0.0, 19.5)
+ASCII 生成失败（LangGraph/grandalf 对自循环条件边支持有限）: no intersection found (point inside ?!). view: <langchain_core.runnables.graph_ascii.VertexViewer object at 0x00000172628D48E0> topt: (0.0, 19.5)
   请使用 output/*.png 或 *.mmd 查看图结构

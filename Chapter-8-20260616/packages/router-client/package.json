@@ -1,0 +1,40 @@
+{
+  "name": "@agent-platform/router-client",
+  "version": "0.23.0",
+  "description": "Minimal TypeScript client for agent-platform Router Engine HTTP/SSE API",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/sse.test.mjs tests/http.test.mjs",
+    "test:integration": "npm run build && node --test tests/integration.test.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "agent-platform",
+    "router",
+    "sse",
+    "multi-agent"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "central_agent_system": "You are the Demo orchestrator; route requests to EchoAgent.",
+  "aggregation": "Summarize subtask results briefly.",
+  "facts_prompt": "Extract key facts.",
+  "decomposition_prompt": "Decompose into a single task JSON: {user_query}",
+  "dependency_system": "Output depends_on JSON.",
+  "dependency_user": "Subtasks: {subtasks_json}",
+  "agent_routing": "Select EchoAgent for: {task_description}",
+  "supervisor_system": "You are the Demo Supervisor. Hand off to echo_agent and summarize the reply.",
+  "multi_task_title": "Final Plan",
+  "single_task_title": "Final Reply",
+  "aggregation_skip_hint": "Single-task query; use sub-agent reply directly",
+  "memory_aggregation_instruction": "Summarize subtask results briefly."
+}

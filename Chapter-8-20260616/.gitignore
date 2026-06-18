@@ -1,0 +1,16 @@
+# Chapter-8 忽略运行时产物
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+chroma_memory/
+data/dynamic_agents.json
+data/thread_stage_context.json
+data/knowledge/
+packages/router-client/node_modules/
+packages/router-client/dist/
+packages/demo-web/node_modules/
+packages/demo-web/dist/
+traces/
+*.sqlite3
+.env

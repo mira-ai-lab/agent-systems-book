@@ -1,0 +1,21 @@
+services:
+  platform-api:
+    build: .
+    ports:
+      - "8780:8780"
+    env_file:
+      - ../.env
+    environment:
+      API_HOST: "0.0.0.0"
+      CHECKPOINT_BACKEND: sqlite
+      CHECKPOINT_SQLITE_PATH: /app/data/checkpoints.db
+      JOB_DB_PATH: /app/data/jobs.db
+      OTEL_TRACES_EXPORTER: file
+      OTEL_TRACES_DIR: /app/data/traces
+      # 可选：就绪探针预热某一领域（如书稿示例 travel）
+      # READY_DOMAIN: travel
+    volumes:
+      - platform_api_data:/app/data
+
+volumes:
+  platform_api_data:

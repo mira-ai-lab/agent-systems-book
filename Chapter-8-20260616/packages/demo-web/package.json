@@ -1,0 +1,23 @@
+{
+  "name": "@agent-platform/demo-web",
+  "version": "0.23.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "npm run build --prefix ../router-client",
+    "dev": "vite",
+    "prebuild": "npm run build --prefix ../router-client",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@agent-platform/router-client": "file:../router-client"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "domain_prompts": {
+    "central_agent_system": "You are a multi-agent orchestration hub. Understand user goals, decompose subtasks, and coordinate sub-agents to fulfill requests.",
+    "aggregation": "Based on the user's original request, synthesize subtask results into a concise, accurate reply. Do not add information the user did not ask for.",
+    "facts_prompt": "Extract task-relevant key facts from the conversation and return them as a JSON list.",
+    "decomposition_prompt": "Decompose the user goal into subtasks for the agent team.\nBackground: {background_info}\nAgent team: {agent_team}\nUser input: {user_input}\nOutput # Goal and bullet subtasks.",
+    "dependency_system": "You are a task dependency analyst. Output a JSON depends_on map from subtasks and agent capabilities.",
+    "dependency_user": "Subtasks: {subtasks}\nAvailable agents: {agents}\nOutput depends_on JSON.",
+    "agent_routing": "Select the best sub-agent for the subtask. Subtask: {task_description}",
+    "supervisor_system": "You are a Supervisor. Hand off subtasks to available sub-agents and summarize results for the user. Each handoff must include a complete, self-contained subtask instruction.",
+    "multi_task_title": "Final Plan",
+    "single_task_title": "Final Reply",
+    "aggregation_skip_hint": "Single-task query: use the sub-agent reply directly (skip aggregation LLM).",
+    "memory_aggregation_instruction": "Synthesize subtask results to answer the user's original request only. Do not add unsolicited information."
+  }
+}

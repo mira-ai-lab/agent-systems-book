@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# 运行时数据
+chroma_memory/
+traces/
+log/
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# 环境
+.env
+.env.*
+
+# IDE / 备份
+.idea/
+Chapter-8-backup-*/

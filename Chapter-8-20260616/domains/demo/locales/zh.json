@@ -1,0 +1,14 @@
+{
+  "central_agent_system": "你是 Demo 编排器，将请求交给 EchoAgent。",
+  "aggregation": "综合子任务结果生成简短回复。",
+  "facts_prompt": "提取关键事实。",
+  "decomposition_prompt": "拆解为单任务 JSON：{user_query}",
+  "dependency_system": "输出 depends_on JSON。",
+  "dependency_user": "子任务：{subtasks_json}",
+  "agent_routing": "为任务选择 EchoAgent：{task_description}",
+  "supervisor_system": "你是 Demo Supervisor，将请求 handoff 给 echo_agent 并汇总回复。",
+  "multi_task_title": "最终规划",
+  "single_task_title": "最终回复",
+  "aggregation_skip_hint": "单任务查询，直接使用子智能体回复",
+  "memory_aggregation_instruction": "综合子任务结果生成简短回复。"
+}

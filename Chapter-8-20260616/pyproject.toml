@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-platform"
+version = "0.23.0"
+description = "Generic multi-agent orchestration platform SDK (LangGraph fixed graph)"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain>=0.1.0",
+    "langchain-core>=0.1.0",
+    "langchain-openai>=0.0.5",
+    "langgraph>=0.0.30",
+    "grandalf>=0.8",
+    "chromadb>=0.4.0",
+    "rank-bm25>=0.2.2",
+    "jieba>=0.42.1",
+    "httpx>=0.25.0",
+    "python-dotenv>=1.0.0",
+    "numpy>=1.24.0",
+    "pydantic>=2.0.0",
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "prometheus-client>=0.19.0",
+]
+dev = ["pytest>=7.0.0", "httpx>=0.25.0"]
+mcp = ["mcp>=1.0.0"]
+# 内置领域插件（书稿仓库内：pip install -e ./domains）
+travel = []
+domains = []
+supervisor = ["langgraph-supervisor>=0.0.8"]
+a2a = ["a2a-sdk[http-server]>=1.0.0", "uvicorn[standard]>=0.23.0", "click>=8.0"]
+all = ["agent-platform[api,dev,supervisor,a2a]"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent_framework*", "services*"]
+
+[tool.setuptools.package-data]
+agent_framework = [
+    "router/prompts/locales/*.json",
+    "prompts/locales/*.json",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
