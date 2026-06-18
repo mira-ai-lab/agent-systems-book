@@ -7,7 +7,7 @@
 1. 启动 platform API（默认 `8780`）：
 
 ```bash
-cd Chapter-8-20260616
+cd Chapter-11
 python scripts/run_api.py
 ```
 

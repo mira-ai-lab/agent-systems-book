@@ -1,6 +1,6 @@
 # 生产运维指南
 
-本文档面向 **agent-platform 0.22.0** 工作区（`Chapter-8-20260616`）的部署与日常运维。与书稿主线 `Chapter-8/` 相比，本分支提供 HTTP API、Docker、多租户、异步 Job、Router SDK 等企业化能力。
+本文档面向 **agent-platform 0.22.0** 工作区（`Chapter-11`）的部署与日常运维。与书稿主线 `Chapter-8/` 相比，本分支提供 HTTP API、Docker、多租户、异步 Job、Router SDK 等企业化能力。
 
 ## 部署拓扑
 
@@ -19,7 +19,7 @@ Client / Demo Web / router-client
 ### 本地开发
 
 ```bash
-cd Chapter-8-20260616
+cd Chapter-11
 pip install -e ".[api,dev]"
 pip install -e domains/
 pytest
@@ -30,7 +30,7 @@ python scripts/run_api.py
 ### Docker Compose
 
 ```bash
-cd Chapter-8-20260616
+cd Chapter-11
 docker compose up --build
 # http://localhost:8780/health
 ```

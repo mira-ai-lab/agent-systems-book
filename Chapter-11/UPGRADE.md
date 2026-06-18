@@ -1,4 +1,4 @@
-# Chapter-8 架构升级（20260616 分支）
+# Chapter-11 企业 Agent 平台（agent-platform）
 
 
 
@@ -14,7 +14,7 @@
 
 | `Chapter-8-backup-20260616/` | 只读快照 |
 
-| `Chapter-8-20260616/` | **本目录** |
+| `Chapter-11/` | **本目录** |
 
 
 
@@ -643,7 +643,7 @@
 
 ```bash
 
-cd Chapter-8-20260616
+cd Chapter-11
 
 pip install -e ".[api,dev]"
 
@@ -663,7 +663,7 @@ python scripts/run_api.py
 
 ```bash
 
-cd Chapter-8-20260616
+cd Chapter-11
 
 docker compose up --build
 

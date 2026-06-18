@@ -1,0 +1,11 @@
+{
+  "include": [
+    "agent_framework",
+    "services",
+    "domains",
+    "scripts",
+    "tests"
+  ],
+  "extraPaths": ["."],
+  "pythonVersion": "3.10"
+}

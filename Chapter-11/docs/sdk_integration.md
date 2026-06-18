@@ -11,7 +11,7 @@
 | npm | 随 Node 安装 |
 
 ```bash
-cd Chapter-8-20260616
+cd Chapter-11
 pip install -e ".[api,dev]"
 pip install -e domains/
 ```
@@ -23,7 +23,7 @@ pip install -e domains/
 ## 第一步：启动 Platform API
 
 ```bash
-cd Chapter-8-20260616
+cd Chapter-11
 python scripts/run_api.py
 ```
 

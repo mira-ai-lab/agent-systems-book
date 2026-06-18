@@ -1,4 +1,4 @@
-(agent-systems-book) PS D:\myproject\mira-ai-lab\agent-systems-book\Chapter-8-20260616> python scripts/run_demo.py --domain travel --profile workflow --stream
+(agent-systems-book) PS D:\myproject\mira-ai-lab\agent-systems-book\Chapter-11> python scripts/run_demo.py --domain travel --profile workflow --stream
 time=2026-06-18T08:06:25.553545+00:00 level=INFO logger=agent_framework.tracing.setup trace_id=- span_id=- msg=tracing.file_exporter output_dir=D:\myproject\mira-ai-lab\agent-systems-book\Chapter-8\traces output_file=D:\myproject\mira-ai-lab\agent-systems-book\Chapter-8\traces\spans_20260618_160625.jsonl
 time=2026-06-18T08:06:26.571971+00:00 level=INFO logger=agent_framework.orchestration.router_orchestrator trace_id=- span_id=- msg=router.request.stream.start domain=travel entry_profile=workflow query_preview=你能帮我规划一个下周的多城市旅行吗？我还没想好行程顺序……
 大概是上海、苏州、杭州这几个地方？需要包含行程路线、酒店推荐、

@@ -1,7 +1,7 @@
-# Chapter-8: 企业通用多智能体路由引擎（agent-platform）
+# Chapter-11: 企业通用多智能体路由引擎（agent-platform）
 
 > **产品定位**：`agent_framework/` 为**企业通用路由引擎 SDK**（Router → workflow / adaptive）；`domains/` 下内置 **travel**、**customer_service** 等产品域插件。  
-> **工作区**：本目录为 `Chapter-8-20260616` 生产化改造分支。  
+> **工作区**：本目录为 `Chapter-11` 生产化改造分支。  
 > 稳定原版见 `../Chapter-8/`，只读快照见 `../Chapter-8-backup-20260616/`。  
 > 升级计划见 [UPGRADE.md](UPGRADE.md)。
 
@@ -83,7 +83,7 @@ Chapter-8/
 在 **IDEA 使用的同一 Python 解释器**（如 conda `agent-systems-book`）下执行：
 
 ```bash
-cd Chapter-8-20260616
+cd Chapter-11
 pip install -e ".[api,dev]"
 pip install -e domains/    # entry_points 注册 travel / customer_service / demo
 # 或：powershell scripts/install_dev.ps1
