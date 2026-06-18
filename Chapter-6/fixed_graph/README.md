@@ -41,6 +41,31 @@ python -m fixed_graph.show_graph
 python -m fixed_graph.run_demo
 ```
 
+## Chapter-11 延续（agent-platform）
+
+书稿 `Chapter-6/fixed_graph` 已演进为 **`Chapter-11/`** 通用多 Agent 平台（`agent_framework.orchestration.fixed_graph`）。最小运行示例：
+
+| 脚本 | 路径 | 说明 |
+|------|------|------|
+| **`run_router.py`** | `Chapter-11/scripts/run_router.py` | **产品入口（推荐）**：Router 分类 → `profile=workflow` → Fixed Graph 执行 |
+| **`run_legacy.py`** | `Chapter-11/scripts/run_legacy.py` | **legacy 书稿路径**：直连 `LangGraphOrchestrator`，不经 Router（等价于本章 `fixed_graph.run_demo` 思路） |
+
+安装与运行（在 `Chapter-11` 目录）：
+
+```bash
+cd Chapter-11
+pip install -e ".[dev]"
+pip install -e domains/
+
+# 产品入口（推荐）
+python scripts/run_router.py
+
+# legacy：直连 Fixed Graph（与本书 fixed_graph 演示同构）
+python scripts/run_legacy.py
+```
+
+流式输出、多 domain CLI 等见 `Chapter-11/scripts/run_demo.py`。
+
 ## Notebook 中使用
 
 ```python

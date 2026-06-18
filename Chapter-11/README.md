@@ -61,7 +61,7 @@ Chapter-8/
 ├── book/                         # 书稿示例与 Agent 定义说明
 ├── scripts/
 │   ├── run_router.py             # Router 产品入口（最小示例，推荐）
-│   ├── run.py                    # legacy：直连 LangGraphOrchestrator
+│   ├── run_legacy.py             # legacy：直连 LangGraphOrchestrator
 │   ├── run_demo.py               # 完整 CLI 演示
 │   ├── show_graph.py
 │   ├── test_weather_agent.py
@@ -101,7 +101,7 @@ pytest
 | 用途 | 命令 |
 |------|------|
 | **Router 产品入口（推荐）** | `python scripts/run_router.py` |
-| legacy 直连 Fixed Graph | `python scripts/run.py` |
+| legacy 直连 Fixed Graph | `python scripts/run_legacy.py` |
 | 流式 / 完整 CLI | `python scripts/run_demo.py --domain travel --profile workflow --stream` |
 | 查看图结构（无需 API Key） | `python scripts/show_graph.py` |
 | 完整演示 | `python scripts/run_demo.py` |
@@ -349,7 +349,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-见 `scripts/run.py`。
+见 `scripts/run_legacy.py`。
 
 ## 子智能体
 
