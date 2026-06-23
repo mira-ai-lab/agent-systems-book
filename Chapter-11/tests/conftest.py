@@ -28,3 +28,7 @@ def _session_domains():
     yield
     clear_domains()
     ensure_domains_loaded()
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "integration: 需要真实 LLM/API 的集成测试")

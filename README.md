@@ -76,7 +76,7 @@ Chapter-7 A2A / MCP 另需安装对应目录下的 `requirements.txt`（含 `a2a
 Chapter-10 安装：
 
 ```bash
-cd Chapter-10
+cd Chapter-skill
 pip install -r requirements.txt
 ```
 
@@ -253,7 +253,7 @@ python Hermes_evolution_langgraph.py
 
 可选环境变量：`WEATHER_USE_MCP=0` 跳过天气 MCP；`HERMES_CHECKPOINT=sqlite` 持久化 LangGraph checkpoint。
 
-详细说明见 [Chapter-10/README.md](Chapter-10/README.md)
+详细说明见 [Chapter-10/README.md](Chapter-skill/README.md)
 
 ---
 
@@ -317,4 +317,4 @@ A：默认 `./my_agent_memory/skills/`（Hermes 为 `*.md`，书稿版为 `*.jso
 | [Chapter-8/README.md](Chapter-8/README.md) | 工程化多智能体包、Tracing、运行与 API |
 | [Chapter-7/A2A/hotel_recommendation_agent/README.md](Chapter-7/A2A/hotel_recommendation_agent/README.md) | A2A 服务启动与测试 |
 | [Chapter-7/Mcp/README.md](Chapter-7/Mcp/README.md) | MCP Server / Client |
-| [Chapter-10/README.md](Chapter-10/README.md) | Hermes 自我进化 Agent、两版对比与运行 |
+| [Chapter-10/README.md](Chapter-skill/README.md) | Hermes 自我进化 Agent、两版对比与运行 |

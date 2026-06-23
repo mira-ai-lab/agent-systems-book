@@ -1,18 +1,22 @@
 """企业路由引擎 CLI 演示。
 
-推荐路径（产品默认）::
+默认（书稿 travel 多城市样例）::
 
     python scripts/run_demo.py
-    # customer_service + profile=auto，仅传 query
+    # travel + profile=auto + TRAVEL_SAMPLE_QUERY
 
-能力展示（书稿 travel 域，Fixed Graph 全链路）::
+能力展示（Fixed Graph 全链路）::
 
-    python scripts/run_demo.py --domain travel --legacy-graph --stream
+    python scripts/run_demo.py --legacy-graph --stream
     # 直连 LangGraphOrchestrator，完整 Ch2 预调查 + Ch4 TaskPlanner 多 Agent
 
-Router 统一入口（产品化路径）::
+Router 统一入口::
 
-    python scripts/run_demo.py --domain travel --profile workflow --show-graph
+    python scripts/run_demo.py --profile workflow --show-graph
+
+客服域示例::
+
+    python scripts/run_demo.py --domain customer_service -q "订单号是 12345，我想咨询退货政策"
 """
 
 from __future__ import annotations
@@ -44,9 +48,9 @@ load_project_dotenv()
 setup_observability()
 logger = get_logger(__name__)
 
-DEFAULT_DOMAIN = "customer_service"
+DEFAULT_DOMAIN = "travel"
 DEFAULT_PROFILE = "auto"
-DEFAULT_QUERY = "订单号是 12345，我想咨询退货政策"
+CUSTOMER_SERVICE_SAMPLE_QUERY = "订单号是 12345，我想咨询退货政策"
 
 TRAVEL_SAMPLE_QUERY = """
 你能帮我规划一个下周的多城市旅行吗？我还没想好行程顺序……
@@ -207,13 +211,13 @@ async def run_router_chat(*, domain: str, profile: str, stream: bool) -> None:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(
-        description="企业路由引擎 CLI 演示（默认 customer_service + profile=auto）"
+        description="企业路由引擎 CLI 演示（默认 travel + TRAVEL_SAMPLE_QUERY + profile=auto）"
     )
     parser.add_argument("-q", "--query", help="单条问题")
     parser.add_argument(
         "--domain",
         default=DEFAULT_DOMAIN,
-        help=f"领域名（默认 {DEFAULT_DOMAIN}；travel 为书稿能力展示域）",
+        help=f"领域名（默认 {DEFAULT_DOMAIN}；customer_service 为客服示例域）",
     )
     parser.add_argument(
         "--profile",
@@ -240,8 +244,12 @@ async def main() -> None:
 
     domain = args.domain.strip()
     profile = args.profile.strip()
-    default_query = TRAVEL_SAMPLE_QUERY if domain == "travel" else DEFAULT_QUERY
-    query = (args.query or default_query).strip()
+    if args.query:
+        query = args.query.strip()
+    elif domain == "customer_service":
+        query = CUSTOMER_SERVICE_SAMPLE_QUERY
+    else:
+        query = TRAVEL_SAMPLE_QUERY
 
     if args.legacy_graph and profile != DEFAULT_PROFILE:
         print(f"提示：--legacy-graph 忽略 --profile={profile}，走完整 Fixed Graph。")

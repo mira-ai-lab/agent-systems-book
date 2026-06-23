@@ -1,0 +1,124 @@
+{
+  "locale": "zh",
+  "agents": {
+    "FlightAgent": [
+      {
+        "case_id": "flight-beijing-sanya-jun25",
+        "user_query": "查 6 月 25 日北京飞三亚的机票",
+        "tool": "search_flights",
+        "tool_args": {
+          "departure": "北京",
+          "arrival": "三亚",
+          "date": "2026-06-25"
+        },
+        "response_keywords": ["北京", "三亚", "航班"]
+      },
+      {
+        "case_id": "flight-shanghai-chengdu-jun20",
+        "user_query": "查一下 6 月 20 日上海到成都的航班",
+        "tool": "search_flights",
+        "tool_args": {
+          "departure": "上海",
+          "arrival": "成都",
+          "date": "2026-06-20"
+        },
+        "response_keywords": ["上海", "成都", "航班"]
+      }
+    ],
+    "WeatherAgent": [
+      {
+        "case_id": "weather-beijing-tomorrow",
+        "user_query": "帮我查一下北京明天天气怎么样",
+        "tool": "get_weather",
+        "tool_args": {
+          "city": "北京",
+          "date": "明天"
+        },
+        "response_keywords": ["北京", "天气"]
+      },
+      {
+        "case_id": "weather-xian-forecast-7d",
+        "user_query": "查询西安未来一周天气预报",
+        "tool": "get_weather_forecast",
+        "tool_args": {
+          "city": "西安",
+          "days": 7
+        },
+        "response_keywords": ["西安", "天气"]
+      }
+    ],
+    "HotelAgent": [
+      {
+        "case_id": "hotel-sanya-haitang",
+        "user_query": "推荐三亚海棠湾附近适合亲子入住的酒店",
+        "tool": "recommend_hotel",
+        "tool_args": {
+          "city": "三亚",
+          "preferences": "海棠湾 亲子"
+        },
+        "response_keywords": ["三亚", "酒店"]
+      },
+      {
+        "case_id": "hotel-xian-center",
+        "user_query": "推荐西安市中心交通便利的酒店，预算 500 元以内",
+        "tool": "recommend_hotel",
+        "tool_args": {
+          "city": "西安",
+          "preferences": "市中心",
+          "budget_cny_per_night_max": 500
+        },
+        "response_keywords": ["西安", "酒店"]
+      }
+    ],
+    "RestaurantAgent": [
+      {
+        "case_id": "restaurant-xian-local",
+        "user_query": "推荐西安本地特色美食餐厅",
+        "tool": "recommend_restaurant",
+        "tool_args": {
+          "location": "西安",
+          "cuisine": "陕西菜"
+        },
+        "response_keywords": ["西安", "美食"]
+      },
+      {
+        "case_id": "restaurant-hangzhou-west-lake",
+        "user_query": "推荐杭州西湖边杭帮菜餐厅",
+        "tool": "recommend_restaurant",
+        "tool_args": {
+          "location": "杭州西湖",
+          "cuisine": "杭帮菜"
+        },
+        "response_keywords": ["杭州", "餐厅"]
+      }
+    ],
+    "ItineraryAgent": [
+      {
+        "case_id": "itinerary-hangzhou-3d",
+        "user_query": "帮我规划杭州 3 日游，重点西湖和灵隐寺",
+        "tool": "fetch_candidate_pois",
+        "tool_args": {
+          "city": "杭州",
+          "preferences": "西湖 灵隐寺",
+          "limit": 10
+        },
+        "response_keywords": ["杭州", "行程"]
+      },
+      {
+        "case_id": "itinerary-shenzhen-hangzhou-5d",
+        "user_query": "制定深圳到杭州五日逐日行程，包含西湖和美食",
+        "tool": "plan_itinerary",
+        "tool_args": {
+          "city": "杭州",
+          "days": 5,
+          "candidate_pois": [
+            {"name": "西湖", "type": "景点"},
+            {"name": "灵隐寺", "type": "景点"},
+            {"name": "河坊街", "type": "美食"}
+          ]
+        },
+        "response_keywords": ["杭州", "行程"]
+      }
+    ]
+  }
+}

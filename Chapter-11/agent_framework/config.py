@@ -76,7 +76,7 @@ def load_project_dotenv(*, override: bool = False) -> None:
     _dotenv_loaded = True
 
 
-def create_llm(*, temperature: float = 0):
+def create_llm(*, temperature: float = 0, model: str | None = None):
     """创建统一的 LLM 客户端（全项目唯一入口）。"""
     from langchain_core.messages import BaseMessage
     from langchain_openai import ChatOpenAI
@@ -92,7 +92,7 @@ def create_llm(*, temperature: float = 0):
         "DASHSCOPE_CHAT_BASE_URL",
         "https://dashscope.aliyuncs.com/compatible-mode/v1",
     ).rstrip("/")
-    model = os.getenv("DASHSCOPE_CHAT_MODEL", "qwen-plus")
+    model = model or os.getenv("DASHSCOPE_CHAT_MODEL", "qwen-plus")
     ssl_verify = os.getenv("OPENAI_SSL_VERIFY", "false").lower() not in (
         "0",
         "false",

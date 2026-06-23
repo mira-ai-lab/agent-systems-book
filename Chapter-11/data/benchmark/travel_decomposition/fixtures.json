@@ -1,0 +1,816 @@
+{
+  "version": "1.1.0",
+  "domain": "travel",
+  "locale": "zh",
+  "splits": {
+    "train": [
+      "case-01",
+      "case-02",
+      "case-03",
+      "case-04",
+      "case-05",
+      "case-06",
+      "case-07"
+    ],
+    "dev": [
+      "case-08",
+      "case-09"
+    ],
+    "test": [
+      "case-10",
+      "case-11",
+      "case-12",
+      "case-13",
+      "case-14",
+      "case-15"
+    ]
+  },
+  "cases": [
+    {
+      "id": "case-01",
+      "query": "帮我查一下北京明天天气怎么样",
+      "pre_survey": {
+        "given_facts": [
+          "目的地：北京",
+          "时间：明天"
+        ],
+        "facts_to_lookup": [
+          "北京明天天气预报"
+        ],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 1,
+        "max_subtasks": 1,
+        "required_keywords": [
+          "北京",
+          "天气"
+        ],
+        "forbidden_keywords": [
+          "酒店",
+          "航班",
+          "行程",
+          "餐厅"
+        ],
+        "mappable_agents": [
+          "WeatherAgent"
+        ]
+      },
+      "routing_input": {
+        "sub_steps": [
+          "查询北京明天天气预报"
+        ],
+        "execution_order": [
+          "T1"
+        ],
+        "depends_map": {
+          "T1": []
+        }
+      },
+      "expect_routing": {
+        "assignments": [
+          {
+            "task_id": "T1",
+            "expected_agent": "WeatherAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-02",
+      "query": "查一下 6 月 20 日上海到成都的航班",
+      "pre_survey": {
+        "given_facts": [
+          "出发地：上海",
+          "目的地：成都",
+          "日期：6月20日"
+        ],
+        "facts_to_lookup": [
+          "上海到成都航班"
+        ],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 1,
+        "max_subtasks": 2,
+        "required_keywords": [
+          "上海",
+          "成都",
+          "航班"
+        ],
+        "required_slot_groups": [
+          ["上海"],
+          ["成都"],
+          ["航班", "机票", "飞机"]
+        ],
+        "forbidden_keywords": [
+          "酒店",
+          "餐厅",
+          "行程"
+        ],
+        "mappable_agents": [
+          "FlightAgent"
+        ]
+      },
+      "routing_input": {
+        "sub_steps": [
+          "查询6月20日上海到成都的航班信息"
+        ],
+        "execution_order": [
+          "T1"
+        ],
+        "depends_map": {
+          "T1": []
+        }
+      },
+      "expect_routing": {
+        "assignments": [
+          {
+            "task_id": "T1",
+            "expected_agent": "FlightAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-03",
+      "query": "推荐杭州西湖附近 500 元以内的酒店，安静一点",
+      "pre_survey": {
+        "given_facts": [
+          "城市：杭州",
+          "区域：西湖附近",
+          "预算：500元/晚",
+          "偏好：安静"
+        ],
+        "facts_to_lookup": [
+          "西湖附近酒店"
+        ],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 1,
+        "max_subtasks": 2,
+        "required_keywords": [
+          "杭州",
+          "酒店"
+        ],
+        "forbidden_keywords": [
+          "航班",
+          "行程"
+        ],
+        "mappable_agents": [
+          "HotelAgent"
+        ]
+      },
+      "routing_input": {
+        "sub_steps": [
+          "推荐杭州西湖附近500元以内安静酒店"
+        ],
+        "execution_order": [
+          "T1"
+        ],
+        "depends_map": {
+          "T1": []
+        }
+      },
+      "expect_routing": {
+        "assignments": [
+          {
+            "task_id": "T1",
+            "expected_agent": "HotelAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-04",
+      "query": "成都有什么好吃的川菜馆推荐，人均 150 左右",
+      "pre_survey": {
+        "given_facts": [
+          "城市：成都",
+          "菜系：川菜",
+          "预算：人均150元"
+        ],
+        "facts_to_lookup": [
+          "成都川菜餐厅"
+        ],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 1,
+        "max_subtasks": 2,
+        "required_keywords": [
+          "成都",
+          "餐厅"
+        ],
+        "required_slot_groups": [
+          ["成都"],
+          ["餐厅", "美食", "川菜", "餐馆", "小吃", "火锅"]
+        ],
+        "forbidden_keywords": [
+          "航班",
+          "酒店",
+          "行程"
+        ],
+        "mappable_agents": [
+          "RestaurantAgent"
+        ]
+      },
+      "routing_input": {
+        "sub_steps": [
+          "推荐成都人均150元左右川菜餐厅"
+        ],
+        "execution_order": [
+          "T1"
+        ],
+        "depends_map": {
+          "T1": []
+        }
+      },
+      "expect_routing": {
+        "assignments": [
+          {
+            "task_id": "T1",
+            "expected_agent": "RestaurantAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-05",
+      "query": "规划上海三日游，需要天气、酒店和美食推荐",
+      "pre_survey": {
+        "given_facts": [
+          "城市：上海",
+          "天数：3日"
+        ],
+        "facts_to_lookup": [
+          "上海天气",
+          "上海酒店",
+          "上海美食"
+        ],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 3,
+        "max_subtasks": 5,
+        "required_keywords": [
+          "上海"
+        ],
+        "forbidden_keywords": [],
+        "mappable_agents": [
+          "WeatherAgent",
+          "HotelAgent",
+          "RestaurantAgent"
+        ]
+      },
+      "expect_dependency": {
+        "depends_on": {
+          "T2": ["T1"],
+          "T3": ["T1"]
+        }
+      },
+      "routing_input": {
+        "sub_steps": [
+          "查询上海未来三日天气预报",
+          "推荐上海市中心合适酒店",
+          "推荐上海本地特色美食餐厅"
+        ],
+        "execution_order": [
+          "T1",
+          "T2",
+          "T3"
+        ],
+        "depends_map": {
+          "T1": [],
+          "T2": [],
+          "T3": []
+        }
+      },
+      "expect_routing": {
+        "assignments": [
+          {
+            "task_id": "T1",
+            "expected_agent": "WeatherAgent"
+          },
+          {
+            "task_id": "T2",
+            "expected_agent": "HotelAgent"
+          },
+          {
+            "task_id": "T3",
+            "expected_agent": "RestaurantAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-06",
+      "query": "帮我做北京 5 天深度游行程，包含景点安排",
+      "pre_survey": {
+        "given_facts": [
+          "城市：北京",
+          "天数：5天"
+        ],
+        "facts_to_lookup": [
+          "北京景点",
+          "北京行程"
+        ],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 1,
+        "max_subtasks": 4,
+        "required_keywords": [
+          "北京",
+          "行程"
+        ],
+        "forbidden_keywords": [
+          "航班"
+        ],
+        "mappable_agents": [
+          "ItineraryAgent"
+        ]
+      },
+      "routing_input": {
+        "sub_steps": [
+          "制定北京5天深度游逐日行程并安排景点"
+        ],
+        "execution_order": [
+          "T1"
+        ],
+        "depends_map": {
+          "T1": []
+        }
+      },
+      "expect_routing": {
+        "assignments": [
+          {
+            "task_id": "T1",
+            "expected_agent": "ItineraryAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-07",
+      "query": "广州今天会下雨吗",
+      "pre_survey": {
+        "given_facts": [
+          "城市：广州",
+          "时间：今天"
+        ],
+        "facts_to_lookup": [
+          "广州今天天气"
+        ],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 1,
+        "max_subtasks": 1,
+        "required_keywords": [
+          "广州",
+          "天气"
+        ],
+        "forbidden_keywords": [
+          "酒店",
+          "航班",
+          "餐厅",
+          "行程",
+          "景点"
+        ],
+        "mappable_agents": [
+          "WeatherAgent"
+        ]
+      },
+      "routing_input": {
+        "sub_steps": [
+          "查询广州今天是否会下雨"
+        ],
+        "execution_order": [
+          "T1"
+        ],
+        "depends_map": {
+          "T1": []
+        }
+      },
+      "expect_routing": {
+        "assignments": [
+          {
+            "task_id": "T1",
+            "expected_agent": "WeatherAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-08",
+      "query": "下周去西安玩 4 天，先查天气再推荐酒店和本地美食",
+      "pre_survey": {
+        "given_facts": [
+          "城市：西安",
+          "天数：4天",
+          "时间：下周"
+        ],
+        "facts_to_lookup": [
+          "西安天气",
+          "西安酒店",
+          "西安美食"
+        ],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 3,
+        "max_subtasks": 5,
+        "required_keywords": [
+          "西安"
+        ],
+        "forbidden_keywords": [],
+        "mappable_agents": [
+          "WeatherAgent",
+          "HotelAgent",
+          "RestaurantAgent"
+        ]
+      },
+      "expect_dependency": {
+        "depends_on": {
+          "T2": ["T1"],
+          "T3": ["T1"]
+        }
+      },
+      "routing_input": {
+        "sub_steps": [
+          "查询西安下周天气预报",
+          "推荐西安合适酒店",
+          "推荐西安本地特色美食餐厅"
+        ],
+        "execution_order": [
+          "T1",
+          "T2",
+          "T3"
+        ],
+        "depends_map": {
+          "T1": [],
+          "T2": [],
+          "T3": []
+        }
+      },
+      "expect_routing": {
+        "assignments": [
+          {
+            "task_id": "T1",
+            "expected_agent": "WeatherAgent"
+          },
+          {
+            "task_id": "T2",
+            "expected_agent": "HotelAgent"
+          },
+          {
+            "task_id": "T3",
+            "expected_agent": "RestaurantAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-09",
+      "query": "查 6 月 25 日北京飞三亚的机票，并推荐三亚海棠湾附近酒店",
+      "pre_survey": {
+        "given_facts": [
+          "出发地：北京",
+          "目的地：三亚",
+          "日期：7月1日",
+          "区域：海棠湾"
+        ],
+        "facts_to_lookup": [
+          "北京飞三亚航班",
+          "海棠湾酒店"
+        ],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 2,
+        "max_subtasks": 3,
+        "required_keywords": [
+          "北京",
+          "三亚",
+          "航班",
+          "酒店"
+        ],
+        "forbidden_keywords": [
+          "行程"
+        ],
+        "mappable_agents": [
+          "FlightAgent",
+          "HotelAgent"
+        ]
+      },
+      "routing_input": {
+        "sub_steps": [
+          "查询7月1日北京到三亚的航班",
+          "推荐三亚海棠湾附近酒店"
+        ],
+        "execution_order": [
+          "T1",
+          "T2"
+        ],
+        "depends_map": {
+          "T1": [],
+          "T2": []
+        }
+      },
+      "expect_routing": {
+        "assignments": [
+          {
+            "task_id": "T1",
+            "expected_agent": "FlightAgent"
+          },
+          {
+            "task_id": "T2",
+            "expected_agent": "HotelAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-10",
+      "query": "帮我规划深圳到杭州的五日游：查往返航班、目的地天气、西湖边酒店、杭帮菜餐厅，并给出每日行程",
+      "pre_survey": {
+        "given_facts": [
+          "出发地：深圳",
+          "目的地：杭州",
+          "天数：5天",
+          "区域：西湖"
+        ],
+        "facts_to_lookup": [
+          "深圳杭州航班",
+          "杭州天气",
+          "西湖酒店",
+          "杭帮菜",
+          "杭州行程"
+        ],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 4,
+        "max_subtasks": 6,
+        "required_keywords": [
+          "深圳",
+          "杭州"
+        ],
+        "forbidden_keywords": [],
+        "mappable_agents": [
+          "FlightAgent",
+          "WeatherAgent",
+          "HotelAgent",
+          "RestaurantAgent",
+          "ItineraryAgent"
+        ]
+      },
+      "expect_dependency": {
+        "depends_on": {
+          "T5": ["T1", "T2", "T3", "T4"]
+        }
+      },
+      "routing_input": {
+        "sub_steps": [
+          "查询深圳到杭州往返航班",
+          "查询杭州未来五日天气预报",
+          "推荐杭州西湖边酒店",
+          "推荐杭州杭帮菜餐厅",
+          "制定杭州五日逐日行程"
+        ],
+        "execution_order": [
+          "T1",
+          "T2",
+          "T3",
+          "T4",
+          "T5"
+        ],
+        "depends_map": {
+          "T1": [],
+          "T2": [],
+          "T3": [],
+          "T4": [],
+          "T5": []
+        }
+      },
+      "expect_routing": {
+        "assignments": [
+          {
+            "task_id": "T1",
+            "expected_agent": "FlightAgent"
+          },
+          {
+            "task_id": "T2",
+            "expected_agent": "WeatherAgent"
+          },
+          {
+            "task_id": "T3",
+            "expected_agent": "HotelAgent"
+          },
+          {
+            "task_id": "T4",
+            "expected_agent": "RestaurantAgent"
+          },
+          {
+            "task_id": "T5",
+            "expected_agent": "ItineraryAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-11",
+      "query": "苏州明天适合出门吗，帮我看看天气",
+      "pre_survey": {
+        "given_facts": ["城市：苏州", "时间：明天"],
+        "facts_to_lookup": ["苏州明天天气"],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 1,
+        "max_subtasks": 1,
+        "required_slot_groups": [
+          ["苏州"],
+          ["天气", "气象", "下雨", "气温", "预报"]
+        ],
+        "forbidden_keywords": ["酒店", "航班", "行程", "餐厅"],
+        "mappable_agents": ["WeatherAgent"]
+      },
+      "routing_input": {
+        "sub_steps": ["查询苏州明天天气预报"],
+        "execution_order": ["T1"],
+        "depends_map": {"T1": []}
+      },
+      "expect_routing": {
+        "assignments": [{"task_id": "T1", "expected_agent": "WeatherAgent"}]
+      }
+    },
+    {
+      "id": "case-12",
+      "query": "规划成都三日游：先查天气，再订酒店，最后排每日行程",
+      "pre_survey": {
+        "given_facts": ["城市：成都", "天数：3天"],
+        "facts_to_lookup": ["成都天气", "成都酒店", "成都行程"],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 3,
+        "max_subtasks": 4,
+        "required_slot_groups": [
+          ["成都"],
+          ["天气", "气象", "预报"],
+          ["酒店", "住宿"],
+          ["行程", "安排", "规划"]
+        ],
+        "forbidden_keywords": ["航班"],
+        "mappable_agents": ["WeatherAgent", "HotelAgent", "ItineraryAgent"]
+      },
+      "expect_dependency": {
+        "depends_on": {
+          "T2": ["T1"],
+          "T3": ["T1", "T2"]
+        },
+        "execution_order": ["T1", "T2", "T3"]
+      },
+      "routing_input": {
+        "sub_steps": [
+          "查询成都未来三天天气预报",
+          "推荐成都合适酒店",
+          "制定成都三日逐日行程"
+        ],
+        "execution_order": ["T1", "T2", "T3"],
+        "depends_map": {"T1": [], "T2": ["T1"], "T3": ["T1", "T2"]}
+      },
+      "expect_routing": {
+        "assignments": [
+          {"task_id": "T1", "expected_agent": "WeatherAgent"},
+          {"task_id": "T2", "expected_agent": "HotelAgent"},
+          {"task_id": "T3", "expected_agent": "ItineraryAgent"}
+        ]
+      }
+    },
+    {
+      "id": "case-13",
+      "query": "查厦门到重庆 8 月 10 日的机票，并推荐重庆火锅餐厅",
+      "pre_survey": {
+        "given_facts": ["出发地：厦门", "目的地：重庆", "日期：8月10日"],
+        "facts_to_lookup": ["厦门重庆航班", "重庆火锅餐厅"],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 2,
+        "max_subtasks": 3,
+        "required_slot_groups": [
+          ["厦门"],
+          ["重庆"],
+          ["航班", "机票", "飞机"],
+          ["火锅", "餐厅", "美食", "餐饮"]
+        ],
+        "forbidden_keywords": ["行程"],
+        "mappable_agents": ["FlightAgent", "RestaurantAgent"]
+      },
+      "routing_input": {
+        "sub_steps": [
+          "查询8月10日厦门到重庆的航班",
+          "推荐重庆本地火锅餐厅"
+        ],
+        "execution_order": ["T1", "T2"],
+        "depends_map": {"T1": [], "T2": []}
+      },
+      "expect_routing": {
+        "assignments": [
+          {"task_id": "T1", "expected_agent": "FlightAgent"},
+          {"task_id": "T2", "expected_agent": "RestaurantAgent"}
+        ]
+      }
+    },
+    {
+      "id": "case-14",
+      "query": "南京有什么本地特色小吃推荐",
+      "pre_survey": {
+        "given_facts": ["城市：南京"],
+        "facts_to_lookup": ["南京特色小吃"],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 1,
+        "max_subtasks": 2,
+        "required_slot_groups": [
+          ["南京"],
+          ["小吃", "美食", "餐厅", "餐饮", "特色菜"]
+        ],
+        "forbidden_keywords": ["航班", "酒店", "行程"],
+        "mappable_agents": ["RestaurantAgent"]
+      },
+      "routing_input": {
+        "sub_steps": ["推荐南京本地特色小吃"],
+        "execution_order": ["T1"],
+        "depends_map": {"T1": []}
+      },
+      "expect_routing": {
+        "assignments": [{"task_id": "T1", "expected_agent": "RestaurantAgent"}]
+      }
+    },
+    {
+      "id": "case-15",
+      "query": "上海到北京出差：查航班、查北京天气、订国贸附近酒店",
+      "pre_survey": {
+        "given_facts": ["出发地：上海", "目的地：北京", "区域：国贸"],
+        "facts_to_lookup": ["上海北京航班", "北京天气", "国贸酒店"],
+        "facts_to_derive": [],
+        "educated_guesses": []
+      },
+      "expect": {
+        "min_subtasks": 3,
+        "max_subtasks": 4,
+        "required_slot_groups": [
+          ["上海"],
+          ["北京"],
+          ["航班", "机票"],
+          ["天气", "气象", "预报"],
+          ["酒店", "住宿", "国贸"]
+        ],
+        "forbidden_keywords": ["行程"],
+        "mappable_agents": ["FlightAgent", "WeatherAgent", "HotelAgent"]
+      },
+      "expect_dependency": {
+        "depends_on": {
+          "T2": ["T1"],
+          "T3": ["T1", "T2"]
+        }
+      },
+      "routing_input": {
+        "sub_steps": [
+          "查询上海到北京航班",
+          "查询北京未来天气预报",
+          "推荐北京国贸附近酒店"
+        ],
+        "execution_order": ["T1", "T2", "T3"],
+        "depends_map": {"T1": [], "T2": ["T1"], "T3": ["T1", "T2"]}
+      },
+      "expect_routing": {
+        "assignments": [
+          {"task_id": "T1", "expected_agent": "FlightAgent"},
+          {"task_id": "T2", "expected_agent": "WeatherAgent"},
+          {"task_id": "T3", "expected_agent": "HotelAgent"}
+        ]
+      }
+    }
+  ]
+}

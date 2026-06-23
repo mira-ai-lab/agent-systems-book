@@ -988,6 +988,7 @@ async def fetch_flights_from_api(departure: str, arrival: str, date: str, *, lim
         "大连": "DLC",
         "哈尔滨": "HRB",
         "乌鲁木齐": "URC",
+        "三亚": "SYX",
     }
 
     dep_raw = _normalize_city_or_iata(departure)
@@ -1087,6 +1088,7 @@ async def fetch_flights_from_variflight_api(departure: str, arrival: str, date: 
         "大连": "DLC",
         "哈尔滨": "HRB",
         "乌鲁木齐": "URC",
+        "三亚": "SYX",
     }
 
     dep_raw = _normalize_city_or_iata(departure)

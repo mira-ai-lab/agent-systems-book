@@ -32,13 +32,14 @@ api = [
     "prometheus-client>=0.19.0",
 ]
 dev = ["pytest>=7.0.0", "httpx>=0.25.0"]
+evolution = ["textgrad>=0.1.5"]
 mcp = ["mcp>=1.0.0"]
 # 内置领域插件（书稿仓库内：pip install -e ./domains）
 travel = []
 domains = []
 supervisor = ["langgraph-supervisor>=0.0.8"]
 a2a = ["a2a-sdk[http-server]>=1.0.0", "uvicorn[standard]>=0.23.0", "click>=8.0"]
-all = ["agent-platform[api,dev,supervisor,a2a]"]
+all = ["agent-platform[api,dev,supervisor,a2a,evolution]"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -53,3 +54,7 @@ agent_framework = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "integration: 需要真实 LLM/API 的集成测试",
+    "textgrad: 需要安装 textgrad 可选依赖",
+]
