@@ -1,0 +1,81 @@
+{
+  "locale": "zh",
+  "cases": [
+    {
+      "case_id": "mini-sanya-trip-train",
+      "user_query": "想去三亚玩3天，先查天气、再订酒店、最后查北京飞三亚机票",
+      "steps": [
+        {
+          "step_id": "S1",
+          "agent_name": "WeatherAgent",
+          "subtask": "查询三亚未来3天天气预报",
+          "tool": "get_weather_forecast",
+          "tool_args": { "city": "三亚", "days": 3 },
+          "response_keywords": ["三亚", "天气"]
+        },
+        {
+          "step_id": "S2",
+          "agent_name": "HotelAgent",
+          "subtask": "推荐三亚海棠湾附近适合亲子的酒店",
+          "tool": "recommend_hotel",
+          "tool_args": { "city": "三亚", "preferences": "海棠湾 亲子" },
+          "response_keywords": ["三亚", "酒店"]
+        },
+        {
+          "step_id": "S3",
+          "agent_name": "FlightAgent",
+          "subtask": "查询6月25日北京飞三亚的航班",
+          "tool": "search_flights",
+          "tool_args": {
+            "departure": "北京",
+            "arrival": "三亚",
+            "date": "2026-06-25"
+          },
+          "response_keywords": ["北京", "三亚", "航班"]
+        }
+      ],
+      "expect": {
+        "min_completed_steps": 3,
+        "required_agents": ["WeatherAgent", "HotelAgent", "FlightAgent"],
+        "response_keywords": ["三亚"],
+        "min_step_score": 0.8
+      }
+    },
+    {
+      "case_id": "mini-xian-food-dev",
+      "user_query": "西安三日游：查下周天气、推荐酒店、再找当地特色美食",
+      "steps": [
+        {
+          "step_id": "S1",
+          "agent_name": "WeatherAgent",
+          "subtask": "查询西安未来一周天气预报",
+          "tool": "get_weather_forecast",
+          "tool_args": { "city": "西安", "days": 7 },
+          "response_keywords": ["西安", "天气"]
+        },
+        {
+          "step_id": "S2",
+          "agent_name": "HotelAgent",
+          "subtask": "推荐西安钟楼附近性价比高的酒店",
+          "tool": "recommend_hotel",
+          "tool_args": { "city": "西安", "preferences": "钟楼" },
+          "response_keywords": ["西安", "酒店"]
+        },
+        {
+          "step_id": "S3",
+          "agent_name": "RestaurantAgent",
+          "subtask": "推荐西安钟楼附近本地特色餐厅",
+          "tool": "recommend_restaurant",
+          "tool_args": { "location": "西安钟楼", "cuisine": "本地菜" },
+          "response_keywords": ["西安", "餐厅"]
+        }
+      ],
+      "expect": {
+        "min_completed_steps": 3,
+        "required_agents": ["WeatherAgent", "HotelAgent", "RestaurantAgent"],
+        "response_keywords": ["西安"],
+        "min_step_score": 0.8
+      }
+    }
+  ]
+}

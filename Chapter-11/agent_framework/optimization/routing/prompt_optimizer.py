@@ -18,7 +18,7 @@ from agent_framework.optimization.planner_runtime import build_routing_planner
 from .evaluator import RoutingCaseResult, evaluate_routing_benchmark, evaluate_routing_case
 from .optimizer_prompts import ROUTING_FAILURE_CASE_TEMPLATE, ROUTING_REVISION_TEMPLATE
 
-REQUIRED_PLACEHOLDERS = ("{agent_team}", "{subtasks_json}")
+REQUIRED_PLACEHOLDERS = ("{agent_team}", "{subtasks_json}", "{today}", "{time_anchor}")
 LOCAL_OPTIMIZER_NAME = "local_prompt"
 
 

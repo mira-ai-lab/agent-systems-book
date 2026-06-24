@@ -10,15 +10,22 @@ from langchain_openai import ChatOpenAI
 from agent_framework.optimization.core.result import OptimizationResult
 from agent_framework.optimization.decomposition.fixtures import DecompositionFixtures
 from agent_framework.optimization.decomposition.prompt_optimizer import optimize_decomposition_prompt
+from agent_framework.optimization.objective import OptimizationObjective
 from agent_framework.optimization.optimizers.textgrad_lib.decomposition import (
     optimize_decomposition_prompt_textgrad,
 )
 from agent_framework.optimization.optimizers.textgrad_lib.routing import (
     optimize_agent_routing_prompt_textgrad,
 )
+from agent_framework.optimization.optimizers.textgrad_graph.decomposition import (
+    optimize_decomposition_prompt_graph,
+)
+from agent_framework.optimization.optimizers.textgrad_graph.routing import (
+    optimize_agent_routing_prompt_graph,
+)
 from agent_framework.optimization.routing.prompt_optimizer import optimize_agent_routing_prompt
 
-OptimizerBackend = Literal["local", "textgrad_lib"]
+OptimizerBackend = Literal["local", "textgrad_lib", "textgrad_graph"]
 PlannerSlot = Literal["decomposition", "routing"]
 VALID_SLOTS = ("decomposition", "routing")
 
@@ -67,6 +74,10 @@ async def run_planner_optimization(
     rollback: bool = True,
     train_split: str = "train",
     dev_split: str = "dev",
+    objective: OptimizationObjective = "l1_l2",
+    e2e_profile: str = "workflow",
+    e2e_timeout_sec: Optional[float] = None,
+    enable_guess_agent: bool = True,
 ) -> PlannerOptimizationOutput:
     current_decomposition = decomposition_prompt
     current_routing = agent_routing
@@ -75,7 +86,25 @@ async def run_planner_optimization(
     slot_set: Set[str] = set(slots)
 
     if "decomposition" in slot_set:
-        if backend == "textgrad_lib":
+        if backend == "textgrad_graph":
+            decomposition_result = await optimize_decomposition_prompt_graph(
+                decomposition_prompt=current_decomposition,
+                agent_routing=current_routing,
+                registry=registry,
+                executor_llm=executor_llm,
+                optimizer_llm=optimizer_llm,
+                fixtures=fixtures,
+                max_steps=max_steps,
+                failure_threshold=failure_threshold,
+                rollback=rollback,
+                train_split=train_split,
+                dev_split=dev_split,
+                objective=objective,
+                e2e_profile=e2e_profile,
+                e2e_timeout_sec=e2e_timeout_sec,
+                enable_guess_agent=enable_guess_agent,
+            )
+        elif backend == "textgrad_lib":
             decomposition_result = await optimize_decomposition_prompt_textgrad(
                 decomposition_prompt=current_decomposition,
                 registry=registry,
@@ -104,7 +133,25 @@ async def run_planner_optimization(
         current_decomposition = decomposition_result.best_prompt
 
     if "routing" in slot_set:
-        if backend == "textgrad_lib":
+        if backend == "textgrad_graph":
+            routing_result = await optimize_agent_routing_prompt_graph(
+                agent_routing=current_routing,
+                registry=registry,
+                executor_llm=executor_llm,
+                optimizer_llm=optimizer_llm,
+                fixtures=fixtures,
+                max_steps=max_steps,
+                failure_threshold=failure_threshold,
+                rollback=rollback,
+                train_split=train_split,
+                dev_split=dev_split,
+                decomposition_prompt=current_decomposition,
+                objective=objective,
+                e2e_profile=e2e_profile,
+                e2e_timeout_sec=e2e_timeout_sec,
+                enable_guess_agent=enable_guess_agent,
+            )
+        elif backend == "textgrad_lib":
             routing_result = await optimize_agent_routing_prompt_textgrad(
                 agent_routing=current_routing,
                 registry=registry,

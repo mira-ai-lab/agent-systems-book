@@ -19,6 +19,8 @@ from agent_framework.domain.parsing import (
 from agent_framework.infra.resilience.retry import async_retry, is_retryable_llm_error
 from agent_framework.tracing.trace_provider import span_name, trace_span
 
+from domains.travel.plan_context import build_agent_routing_format_kwargs
+
 
 class TaskPlanner:
     def __init__(
@@ -152,8 +154,10 @@ class TaskPlanner:
         if ctx:
             agent_team = ctx + "\n" + agent_team
         prompt = self.prompts.agent_routing.format(
-            agent_team=agent_team + "\n" + self.agent_registry.get_agent_parameters_text(),
-            subtasks_json=json.dumps(subtasks_for_prompt, ensure_ascii=False, indent=2),
+            **build_agent_routing_format_kwargs(
+                agent_team=agent_team + "\n" + self.agent_registry.get_agent_parameters_text(),
+                subtasks_json=json.dumps(subtasks_for_prompt, ensure_ascii=False, indent=2),
+            ),
         )
         response = await self._ainvoke_llm([HumanMessage(content=prompt)])
         routed = parse_json_from_llm(response.content or "[]")

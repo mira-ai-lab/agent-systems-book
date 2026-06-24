@@ -34,7 +34,7 @@ def test_score_routing_perfect_match():
 
 
 def test_extract_agent_routing_prompt():
-    raw = "prefix\n```\nROUTE {agent_team} {subtasks_json}\n```"
+    raw = "prefix\n```\nROUTE {agent_team} {subtasks_json} {today} {time_anchor}\n```"
     assert extract_agent_routing_prompt(raw).startswith("ROUTE")
 
 

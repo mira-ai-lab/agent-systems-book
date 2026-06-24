@@ -19,7 +19,7 @@ def test_save_and_load_optimized_prompts(tmp_path: Path, monkeypatch):
         path,
         updates={
             "decomposition_prompt": "DECOMP {background_info} {agent_team} {user_input}",
-            "agent_routing": "ROUTE {agent_team} {subtasks_json}",
+            "agent_routing": "ROUTE {agent_team} {subtasks_json} {today} {time_anchor}",
         },
         metadata={"best_dev_score": 0.91},
     )
@@ -41,7 +41,7 @@ def test_travel_prompts_build_auto_loads_optimized(tmp_path: Path, monkeypatch):
         json.dumps(
             {
                 "decomposition_prompt": "AUTO {background_info} {agent_team} {user_input}",
-                "agent_routing": "AUTO_ROUTE {agent_team} {subtasks_json}",
+                "agent_routing": "AUTO_ROUTE {agent_team} {subtasks_json} {today} {time_anchor}",
             },
             ensure_ascii=False,
         )

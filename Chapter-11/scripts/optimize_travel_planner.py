@@ -9,6 +9,12 @@
     # textgrad 库版（需 pip install -e ".[evolution]"）
     python scripts/optimize_travel_planner.py --backend textgrad_lib --max-steps 3
 
+    # textgrad 计算图版（TaskPlanner 三步接 StringBasedFunction，Phase B1）
+    python scripts/optimize_travel_planner.py --backend textgrad_graph --max-steps 3
+
+    # E2E graph loss 驱动（Phase B2，需 textgrad_graph + --objective e2e）
+    python scripts/optimize_travel_planner.py --backend textgrad_graph --objective e2e --max-steps 1 --train-split dev --dev-split dev
+
     # 只优化 routing（使用当前 decomposition_prompt）
     python scripts/optimize_travel_planner.py --slots routing
 """
@@ -29,6 +35,7 @@ if str(_ROOT) not in sys.path:
 from agent_framework.config import create_llm, load_project_dotenv
 from agent_framework.optimization.core.save import save_planner_optimization_artifacts
 from agent_framework.optimization.decomposition.fixtures import default_fixtures_path, load_decomposition_fixtures
+from agent_framework.optimization.objective import parse_optimization_objective
 from agent_framework.optimization.planner_pipeline import parse_planner_slots, run_planner_optimization
 from agent_framework.optimization.prompt_store import optimized_prompts_path
 from domains.travel.prompt_bundle import TravelPrompts
@@ -67,6 +74,10 @@ async def _run(args: argparse.Namespace) -> int:
     decomposition_prompt = base_prompts.decomposition_prompt
     agent_routing = base_prompts.agent_routing
     slots = parse_planner_slots(args.slots)
+    objective = parse_optimization_objective(args.objective)
+
+    if objective == "e2e" and args.backend != "textgrad_graph":
+        raise SystemExit("objective=e2e 仅支持 --backend textgrad_graph（Phase B2 E2E graph）")
 
     if args.prompt_file:
         payload = json.loads(Path(args.prompt_file).read_text(encoding="utf-8"))
@@ -81,10 +92,12 @@ async def _run(args: argparse.Namespace) -> int:
     optimizer_llm = create_llm(temperature=0.2, model=optimizer_model)
 
     print(
-        f"start planner optimization: backend={args.backend} slots={','.join(slots)} "
-        f"train={args.train_split} dev={args.dev_split} max_steps={args.max_steps} "
-        f"rollback={not args.no_rollback}"
+        f"start planner optimization: backend={args.backend} objective={objective} "
+        f"slots={','.join(slots)} train={args.train_split} dev={args.dev_split} "
+        f"max_steps={args.max_steps} rollback={not args.no_rollback}"
     )
+    if objective == "e2e":
+        print(f"e2e_profile={args.e2e_profile} e2e_timeout={args.e2e_timeout}")
     print(f"executor_model={executor_model} optimizer_model={optimizer_model}")
 
     output = await run_planner_optimization(
@@ -101,10 +114,17 @@ async def _run(args: argparse.Namespace) -> int:
         rollback=not args.no_rollback,
         train_split=args.train_split,
         dev_split=args.dev_split,
+        objective=objective,
+        e2e_profile=args.e2e_profile,
+        e2e_timeout_sec=args.e2e_timeout,
+        enable_guess_agent=not args.no_guess_agent,
     )
 
+    report_suffix = args.backend
+    if objective == "e2e":
+        report_suffix = f"{args.backend}_e2e"
     output_path = args.output or optimized_prompts_path(fixtures.locale)
-    report_path = args.report_output or output_path.parent / f"planner_{args.backend}_optimization_report.json"
+    report_path = args.report_output or output_path.parent / f"planner_{report_suffix}_optimization_report.json"
 
     save_planner_optimization_artifacts(
         locale=fixtures.locale,
@@ -116,7 +136,6 @@ async def _run(args: argparse.Namespace) -> int:
         decomposition_result=output.decomposition_result,
         routing_result=output.routing_result,
     )
-
     _print_slot_result("decomposition", output.decomposition_result)
     _print_slot_result("routing", output.routing_result)
     print(f"saved prompt: {output_path}")
@@ -131,8 +150,8 @@ def main() -> int:
     parser.add_argument(
         "--backend",
         default="local",
-        choices=["local", "textgrad_lib"],
-        help="local=自写 TextGrad 风格；textgrad_lib=真 textgrad 库",
+        choices=["local", "textgrad_lib", "textgrad_graph"],
+        help="local=自写 TextGrad 风格；textgrad_lib=失败文本+TGD；textgrad_graph=三步计算图反传",
     )
     parser.add_argument(
         "--slots",
@@ -143,6 +162,29 @@ def main() -> int:
     parser.add_argument("--dev-split", default="dev", choices=["train", "dev", "test", "all"])
     parser.add_argument("--max-steps", type=int, default=5)
     parser.add_argument("--failure-threshold", type=float, default=0.8)
+    parser.add_argument(
+        "--objective",
+        default="l1_l2",
+        choices=["l1_l2", "e2e"],
+        help="l1_l2=B1 planner 分；e2e=B2 端到端 graph loss + E2E rollback（需 textgrad_graph）",
+    )
+    parser.add_argument(
+        "--e2e-profile",
+        default="workflow",
+        choices=["workflow", "legacy"],
+        help="E2E 编排路径（objective=e2e 时生效）",
+    )
+    parser.add_argument(
+        "--e2e-timeout",
+        type=float,
+        default=None,
+        help="单条 E2E case 超时秒数（objective=e2e 时生效）",
+    )
+    parser.add_argument(
+        "--no-guess-agent",
+        action="store_true",
+        help="E2E 评测时关闭 guess_agent 回退",
+    )
     parser.add_argument("--no-rollback", action="store_true")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--report-output", type=Path)

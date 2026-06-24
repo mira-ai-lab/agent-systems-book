@@ -36,6 +36,30 @@ def planner() -> TaskPlanner:
     return TaskPlanner(llm, registry, prompts, domain_config)
 
 
+def test_route_to_agents_injects_time_anchor(planner: TaskPlanner):
+    captured: list = []
+
+    async def ainvoke(messages):
+        captured.append(messages)
+        msg = MagicMock()
+        msg.content = json.dumps(
+            [{"task_id": "T1", "agent": "FlightAgent", "params": {"date": "2026-07-01"}}],
+            ensure_ascii=False,
+        )
+        return msg
+
+    planner.llm.ainvoke = AsyncMock(side_effect=ainvoke)
+    asyncio.run(planner.route_to_agents(["查7月1日北京飞三亚航班"], ["T1"], {"T1": []}))
+
+    from domains.travel.plan_context import build_time_anchor
+
+    prompt_text = captured[0][0].content
+    today = build_time_anchor()["today"]
+    assert today in prompt_text
+    assert "{time_anchor}" not in prompt_text
+    assert "禁止输出 2024" in prompt_text or "2024" in prompt_text
+
+
 def test_route_to_agents_with_llm_routing(planner: TaskPlanner):
     planner.llm = _mock_llm([
         json.dumps([

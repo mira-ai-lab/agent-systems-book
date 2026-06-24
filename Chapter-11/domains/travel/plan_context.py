@@ -35,3 +35,19 @@ def format_time_anchor_block(anchor: Optional[Dict[str, str]] = None) -> str:
         "- params 中的 date / start_date 必须落在今天或之后，且在未来 14 天预报范围内\n"
         "- 禁止输出 2024、2025 等早于今天的历史日期作为「下周」"
     )
+
+
+def build_agent_routing_format_kwargs(
+    *,
+    agent_team: str,
+    subtasks_json: str,
+    ref: Optional[date] = None,
+) -> Dict[str, str]:
+    """组装 agent_routing 模板 format 所需占位符（运行时注入 today / time_anchor）。"""
+    anchor = build_time_anchor(ref=ref)
+    return {
+        "agent_team": agent_team,
+        "subtasks_json": subtasks_json,
+        "today": anchor["today"],
+        "time_anchor": format_time_anchor_block(anchor),
+    }

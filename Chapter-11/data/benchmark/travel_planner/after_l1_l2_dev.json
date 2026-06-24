@@ -1,0 +1,189 @@
+{
+  "l1": {
+    "version": "1.1.0",
+    "domain": "travel",
+    "locale": "zh",
+    "split": "dev",
+    "case_count": 2,
+    "average_score": 0.95,
+    "cases": [
+      {
+        "case_id": "case-08",
+        "query": "下周去西安玩 4 天，先查天气再推荐酒店和本地美食",
+        "score": {
+          "total": 0.9,
+          "format_ok": true,
+          "subtask_count_ok": true,
+          "slot_ok": true,
+          "keyword_ok": true,
+          "forbidden_ok": true,
+          "dependency_ok": false,
+          "routing_assignment_ok": true,
+          "agent_coverage_ok": true,
+          "subtask_count": 3,
+          "details": [
+            "T2 依赖期望 ['T1']，实际 []",
+            "T3 依赖期望 ['T1']，实际 []"
+          ]
+        },
+        "total_goal": "为用户规划下周西安4日旅行，包括查询天气、推荐酒店和本地美食",
+        "sub_steps": [
+          "查询西安市下周每日的天气预报，包括温度、天气状况及出行建议",
+          "根据西安市、4天行程、偏好“近景区”推荐3家高性价比酒店",
+          "根据西安市、本地特色、预算中等推荐6家地道陕菜餐厅，覆盖早餐、午餐、晚餐场景"
+        ],
+        "routed_agents": [
+          "WeatherAgent",
+          "HotelAgent",
+          "RestaurantAgent"
+        ],
+        "execution_order": [
+          "T1",
+          "T2",
+          "T3"
+        ],
+        "depends_map": {
+          "T1": [],
+          "T2": [],
+          "T3": []
+        },
+        "raw_output": "# 目标\n为用户规划下周西安4日旅行，包括查询天气、推荐酒店和本地美食\n# 任务拆解\n- 查询西安市下周每日的天气预报，包括温度、天气状况及出行建议\n- 根据西安市、4天行程、偏好“近景区”推荐3家高性价比酒店\n- 根据西安市、本地特色、预算中等推荐6家地道陕菜餐厅，覆盖早餐、午餐、晚餐场景"
+      },
+      {
+        "case_id": "case-09",
+        "query": "查 6 月 25 日北京飞三亚的机票，并推荐三亚海棠湾附近酒店",
+        "score": {
+          "total": 1.0,
+          "format_ok": true,
+          "subtask_count_ok": true,
+          "slot_ok": true,
+          "keyword_ok": true,
+          "forbidden_ok": true,
+          "dependency_ok": true,
+          "routing_assignment_ok": true,
+          "agent_coverage_ok": true,
+          "subtask_count": 2,
+          "details": []
+        },
+        "total_goal": "查询6月25日北京飞三亚的航班信息，并推荐三亚海棠湾区域的酒店",
+        "sub_steps": [
+          "查询出发地为北京、目的地为三亚、日期为6月25日的航班信息",
+          "推荐位于三亚海棠湾区域的酒店"
+        ],
+        "routed_agents": [
+          "FlightAgent",
+          "HotelAgent"
+        ],
+        "execution_order": [
+          "T1",
+          "T2"
+        ],
+        "depends_map": {
+          "T1": [],
+          "T2": []
+        },
+        "raw_output": "# 目标\n查询6月25日北京飞三亚的航班信息，并推荐三亚海棠湾区域的酒店\n# 任务拆解\n- 查询出发地为北京、目的地为三亚、日期为6月25日的航班信息\n- 推荐位于三亚海棠湾区域的酒店"
+      }
+    ]
+  },
+  "l2": {
+    "domain": "travel",
+    "locale": "zh",
+    "split": "dev",
+    "case_count": 2,
+    "average_score": 1.0,
+    "cases": [
+      {
+        "case_id": "case-08",
+        "query": "下周去西安玩 4 天，先查天气再推荐酒店和本地美食",
+        "score": {
+          "total": 1.0,
+          "coverage_ok": true,
+          "agent_match_ok": true,
+          "routing_status_ok": true,
+          "params_ok": true,
+          "details": []
+        },
+        "subtasks": [
+          {
+            "task_id": "T1",
+            "description": "查询西安下周天气预报",
+            "agent": "WeatherAgent",
+            "routing_status": "llm",
+            "params": {
+              "city": "西安",
+              "days": 7
+            },
+            "depends_on": []
+          },
+          {
+            "task_id": "T2",
+            "description": "推荐西安合适酒店",
+            "agent": "HotelAgent",
+            "routing_status": "llm",
+            "params": {
+              "city": "西安",
+              "preferences": {},
+              "budget_cny_per_night_max": 500
+            },
+            "depends_on": []
+          },
+          {
+            "task_id": "T3",
+            "description": "推荐西安本地特色美食餐厅",
+            "agent": "RestaurantAgent",
+            "routing_status": "llm",
+            "params": {
+              "location": "西安",
+              "cuisine": "本地特色",
+              "budget_cny_per_person": 100
+            },
+            "depends_on": []
+          }
+        ],
+        "raw_output": "[\n  {\n    \"task_id\": \"T1\",\n    \"description\": \"查询西安下周天气预报\",\n    \"agent\": \"WeatherAgent\",\n    \"routing_status\": \"llm\",\n    \"params\": {\n      \"city\": \"西安\",\n      \"days\": 7\n    },\n    \"depends_on\": []\n  },\n  {\n    \"task_id\": \"T2\",\n    \"description\": \"推荐西安合适酒店\",\n    \"agent\": \"HotelAgent\",\n    \"routing_status\": \"llm\",\n    \"params\": {\n      \"city\": \"西安\",\n      \"preferences\": {},\n      \"budget_cny_per_night_max\": 500\n    },\n    \"depends_on\": []\n  },\n  {\n    \"task_id\": \"T3\",\n    \"description\": \"推荐西安本地特色美食餐厅\",\n    \"agent\": \"RestaurantAgent\",\n    \"routing_status\": \"llm\",\n    \"params\": {\n      \"location\": \"西安\",\n      \"cuisine\": \"本地特色\",\n      \"budget_cny_per_person\": 100\n    },\n    \"depends_on\": []\n  }\n]"
+      },
+      {
+        "case_id": "case-09",
+        "query": "查 6 月 25 日北京飞三亚的机票，并推荐三亚海棠湾附近酒店",
+        "score": {
+          "total": 1.0,
+          "coverage_ok": true,
+          "agent_match_ok": true,
+          "routing_status_ok": true,
+          "params_ok": true,
+          "details": []
+        },
+        "subtasks": [
+          {
+            "task_id": "T1",
+            "description": "查询7月1日北京到三亚的航班",
+            "agent": "FlightAgent",
+            "routing_status": "llm",
+            "params": {
+              "departure": "北京",
+              "arrival": "三亚",
+              "date": "2024-07-01"
+            },
+            "depends_on": []
+          },
+          {
+            "task_id": "T2",
+            "description": "推荐三亚海棠湾附近酒店",
+            "agent": "HotelAgent",
+            "routing_status": "llm",
+            "params": {
+              "city": "三亚",
+              "preferences": [
+                "海棠湾"
+              ],
+              "budget_cny_per_night_max": null
+            },
+            "depends_on": []
+          }
+        ],
+        "raw_output": "[\n  {\n    \"task_id\": \"T1\",\n    \"description\": \"查询7月1日北京到三亚的航班\",\n    \"agent\": \"FlightAgent\",\n    \"routing_status\": \"llm\",\n    \"params\": {\n      \"departure\": \"北京\",\n      \"arrival\": \"三亚\",\n      \"date\": \"2024-07-01\"\n    },\n    \"depends_on\": []\n  },\n  {\n    \"task_id\": \"T2\",\n    \"description\": \"推荐三亚海棠湾附近酒店\",\n    \"agent\": \"HotelAgent\",\n    \"routing_status\": \"llm\",\n    \"params\": {\n      \"city\": \"三亚\",\n      \"preferences\": [\n        \"海棠湾\"\n      ],\n      \"budget_cny_per_night_max\": null\n    },\n    \"depends_on\": []\n  }\n]"
+      }
+    ]
+  }
+}
