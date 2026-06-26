@@ -1,6 +1,6 @@
 # agent-systems-book
 
-《智能体系统》配套代码仓库：从单 Agent 推理、记忆与任务规划，到多智能体编排与工程化整合（Chapter-8），MCP / A2A 远程协作，再到 Hermes 自我进化 Agent 的完整示例。
+《智能体系统》配套代码仓库：从单 Agent 推理、记忆与任务规划，到多智能体编排与工程化整合（Chapter-8），MCP / A2A 远程协作，轨迹失败归因（Chapter-9），再到通用多智能体路由平台（Chapter-11）的完整示例。
 
 ## 仓库结构
 
@@ -24,10 +24,18 @@ agent-systems-book/
 │   ├── scripts/          # run_demo.py（支持 --stream）、show_graph.py
 │   ├── book/             # 书稿离线演示（central_agent_demo_short.py 等）
 │   └── tests/
-└── Chapter-10/           # Hermes 自我进化 Agent（技能学习 + LangGraph）
-    ├── Hermes_evolution_langgraph.py   # 完整闭环 + SubAgent
-    ├── book/             # 书稿简化版（langgraph_evolu.py 等）
-    └── my_agent_memory/  # 运行时技能库与热记忆（可删后重跑）
+├── Chapter-9/            # 轨迹转换 + 失败归因（AutoFA）
+│   ├── testdata/         # span JSONL 样本与 convert_spans_to_whowhen.py
+│   ├── Automated_FA/     # inference.py / evaluate.py
+│   └── automated_failure_attribution_eval.ipynb
+└── Chapter-11/           # 通用多智能体路由引擎（agent-platform）
+    ├── agent_framework/  # Router / 编排 / tracing / optimization SDK
+    ├── domains/          # travel（主示例）、demo（插件模板）
+    ├── services/api/     # FastAPI：/v1/chat、SSE 流式
+    ├── scripts/          # run_demo.py、run_api.py、travel/、dev/
+    ├── packages/         # router-client（TS SDK）、demo-web（Web UI）
+    ├── notebooks/        # planner TextGrad 交互教程
+    └── tests/
 ```
 
 ## 各章内容概览
@@ -42,9 +50,10 @@ agent-systems-book/
 | **Chapter-7 A2A** | 远程 Agent 协议 + Supervisor 调度 | `A2A/supervisor_local.py` |
 | **Chapter-7 MCP** | 酒店工具 MCP Server（SSE） | `Mcp/hotel_mcp_server.py` |
 | **Chapter-8** | Ch2–5 能力整合 + LangGraph 固定图 + Tracing | `scripts/run_demo.py --stream` |
-| **Chapter-10** | Hermes 自我进化：技能抽取 / skill_view / patch | `Hermes_evolution_langgraph.py` |
+| **Chapter-9** | OpenTelemetry 轨迹 → Who&When → 失败归因 | `testdata/convert_spans_to_whowhen.py` |
+| **Chapter-11** | Router + 域插件 + HTTP API + Web Demo + TextGrad | `scripts/run_demo.py --domain travel --stream` |
 
-Chapter-6 整合了前几章能力，是全书的主线 demo；**Chapter-8** 在相同业务能力上提供 **工程化 Python 包**（`travel_multi_agent`）、**OpenTelemetry 可观测性** 与 **书稿离线案例**（`book/`）；Chapter-7 演示 **MCP 工具化** 与 **A2A 服务化** 两种对外协作方式；**Chapter-10** 在 LangGraph 上实现 **跨任务技能学习与复用**（Hermes 闭环）。
+Chapter-6 整合了前几章能力，是全书的主线 demo；**Chapter-8** 在相同业务能力上提供 **工程化 Python 包**（`travel_multi_agent`）、**OpenTelemetry 可观测性** 与 **书稿离线案例**（`book/`）；Chapter-7 演示 **MCP 工具化** 与 **A2A 服务化** 两种对外协作方式；**Chapter-9** 基于 Chapter-8 导出的 span 轨迹做 **格式转换与 Automated Failure Attribution（AutoFA）**；**Chapter-11** 将 Chapter-8 能力 **平台化** 为通用 Router SDK（`agent_framework` + 域插件），并提供 HTTP API、TypeScript SDK 与 Web Demo。
 
 ---
 
@@ -59,7 +68,7 @@ conda create -n agent-systems-book python=3.10 -y
 conda activate agent-systems-book
 ```
 
-各章有独立 `requirements.txt`；**Chapter-6 / Chapter-8 建议可编辑安装**（后续 import 更顺畅）：
+各章有独立 `requirements.txt`；**Chapter-6 / Chapter-8 / Chapter-11 建议可编辑安装**（后续 import 更顺畅）：
 
 ```bash
 cd Chapter-6
@@ -67,20 +76,25 @@ pip install -e .
 
 cd Chapter-8
 pip install -e .
-# 开发依赖（pytest）
-pip install -e ".[dev]"
+pip install -e ".[dev]"    # pytest
+
+cd Chapter-11
+pip install -e ".[api,dev]"
+pip install -e domains/              # 注册 travel 等域插件
+pip install -e ".[evolution]"        # 可选：TextGrad prompt 优化
 ```
 
 Chapter-7 A2A / MCP 另需安装对应目录下的 `requirements.txt`（含 `a2a-sdk`、`mcp` 等）。
 
-Chapter-10 安装：
+Chapter-9 AutoFA：
 
 ```bash
-cd Chapter-skill
-pip install -r requirements.txt
+cd Chapter-9/Automated_FA
+pip install openai python-dotenv    # 通义千问 API 模式最小依赖
+# 详见 Chapter-9/testdata/README.md
 ```
 
-（完整版 SubAgent 会复用 Chapter-6 子智能体，建议已安装 Chapter-6 依赖。）
+Chapter-11 Web Demo 前端另需 **Node.js ≥ 18**（`packages/demo-web`）。
 
 ### 配置 `.env`（必读）
 
@@ -103,7 +117,7 @@ cp .env.example .env
 
 用编辑器打开根目录 `.env`，把 `your-xxx` 占位符换成你自己的值。
 
-**最少配置（能跑通 Chapter-6 / Chapter-8 多智能体）：**
+**最少配置（能跑通 Chapter-6 / Chapter-8 / Chapter-11 多智能体）：**
 
 | 变量 | 是否必填 | 说明 |
 |------|----------|------|
@@ -125,7 +139,9 @@ cp .env.example .env
 |------|----------|
 | **Chapter-6** | `chapter6/paths.py` → `Chapter-6/.env` → 书根 `.env` |
 | **Chapter-8** | `travel_multi_agent/config.py` → `Chapter-8/.env` → 书根 `.env` |
+| **Chapter-11** | `agent_framework` 配置 → `Chapter-11/.env` → 书根 `.env` |
 | **Chapter-7 A2A** | `hotel_recommendation_agent/.env` → 书根 `.env` |
+| **Chapter-9 AutoFA** | `Automated_FA/.env`（含 `FA_REFERENCE_DATE`） |
 | **Chapter-3 等 notebook** | 多数直接 `load_dotenv(书根/.env)` |
 
 **推荐做法**：把通用 Key（LLM、地图）统一放在**书根 `.env`**；仅某章有特殊配置时，再在对应章节目录放局部 `.env`。
@@ -136,11 +152,11 @@ cp .env.example .env
 
 | 段落 | 变量示例 | 影响范围 |
 |------|----------|----------|
-| 一、大模型 | `DASHSCOPE_API_KEY`、`OPENAI_*` | Chapter-2～8、Chapter-10 通用 |
-| 二、地图 POI | `AMAP_KEY`、`BAIDU_MAP_AK` | 酒店 / 景点 / 美食 Agent；Chapter-10 SubAgent |
-| 二点五、天气 MCP | `WEATHERAPI_KEY` | Chapter-6 / Chapter-8 / Chapter-10 WeatherAgent（MCP 优先） |
+| 一、大模型 | `DASHSCOPE_API_KEY`、`OPENAI_*` | Chapter-2～8、Chapter-9、Chapter-11 通用 |
+| 二、地图 POI | `AMAP_KEY`、`BAIDU_MAP_AK` | 酒店 / 景点 / 美食 Agent；Chapter-11 travel 域 |
+| 二点五、天气 MCP | `WEATHERAPI_KEY` | Chapter-6 / Chapter-8 / Chapter-11 WeatherAgent（MCP 优先） |
 | 二点六、酒店 MCP | `HOTEL_MCP_*` | Chapter-7 MCP Server 地址 |
-| 三、航班 | `AVIATIONSTACK_KEY`、`VARIFLIGHT_API_KEY` | Chapter-6 / Chapter-8 FlightAgent |
+| 三、航班 | `AVIATIONSTACK_KEY`、`VARIFLIGHT_API_KEY` | Chapter-6 / Chapter-8 / Chapter-11 FlightAgent |
 | 四、其他 | `TMDB_BEARER_TOKEN` | 扩展 demo |
 | 五、Chapter-6 选项 | `MEMORY_BACKEND=chroma\|store` | 长期记忆后端 |
 | 六、Chapter-8 可观测性 | `OTEL_TRACES_EXPORTER`、`LOG_LEVEL` | OpenTelemetry span 与结构化日志 |
@@ -233,27 +249,58 @@ python hotel_recommendation_demo_mcp.py
 
 ---
 
-## Chapter-10 快速开始
+## Chapter-9 快速开始
 
-Chapter-10 演示 **Hermes 自我进化闭环**：任务执行 → LLM 评估 → 抽取技能 → 下次 `skill_view` 复用；旅游 Demo 为 **丽江 3 日游学习技能 → 大理 3 日游复用**。
-
-| 模式 | 入口 | 说明 |
-|------|------|------|
-| 完整 Hermes | `python Hermes_evolution_langgraph.py` | ReAct + `skill_view` + SubAgent（较慢，需 API） |
-| 书稿简化版 | `cd book && python langgraph_evolu.py` | 纯 LLM 规划，课堂快速跑通 |
+Chapter-9 演示 **OpenTelemetry span 轨迹 → Who&When 格式 → 失败归因（AutoFA）** 全链路，输入可来自 Chapter-8 等多智能体系统导出的 `spans_*.jsonl`。
 
 ```powershell
-cd Chapter-10
+# 1. 格式转换（仓库内已含示例 span）
+cd Chapter-9/testdata
+python convert_spans_to_whowhen.py spans_20260615_180713.jsonl
 
-# 可选：清空旧技能，重新演示「学习 → 复用」
-# $env:TRAVEL_DEMO_FRESH="1"
+# 2. 失败归因（需配置 Automated_FA/.env 中的 DASHSCOPE_API_KEY）
+cd ../Automated_FA
+python inference.py
 
-python Hermes_evolution_langgraph.py
+# 3. 可选：与人工标注对比准确率
+python evaluate.py
 ```
 
-可选环境变量：`WEATHER_USE_MCP=0` 跳过天气 MCP；`HERMES_CHECKPOINT=sqlite` 持久化 LangGraph checkpoint。
+交互式全流程见 `automated_failure_attribution_eval.ipynb`。
 
-详细说明见 [Chapter-10/README.md](Chapter-skill/README.md)
+详细说明见 [Chapter-9/testdata/README.md](Chapter-9/testdata/README.md)
+
+---
+
+## Chapter-11 快速开始
+
+Chapter-11 是 **通用多智能体路由引擎（agent-platform）**：`agent_framework/` 与业务域解耦，**travel** 为仓库内完整示例域；整合 Router（L1）与 LangGraph Fixed Graph / Supervisor（L2）。
+
+| 用途 | 命令 |
+|------|------|
+| 完整 CLI（流式，推荐） | `python scripts/run_demo.py --domain travel --profile workflow --stream` |
+| HTTP API | `python scripts/run_api.py`（默认 `8780`） |
+| Web Demo | API + `packages/demo-web` → `npm run dev`（`5173`） |
+| 编排图（无需 Key） | `python scripts/show_graph.py` |
+| 单元测试 | `pytest -m "not integration"` |
+| TextGrad 教程 | `notebooks/planner_b1_textgrad_graph.ipynb` |
+
+```powershell
+cd Chapter-11
+pip install -e ".[api,dev]"
+pip install -e domains/
+
+# CLI 演示
+python scripts/run_demo.py --domain travel --profile workflow --stream
+
+# Web Demo：终端 1 启动 API，终端 2 启动前端
+python scripts/run_api.py
+cd packages\demo-web && npm install && npm run dev
+```
+
+与 Chapter-8 关系：业务能力同源（旅行多 Agent + 固定图流水线）；Chapter-11 增加 **语义 Router**、**域插件协议**、**HTTP / TS SDK**、**benchmark + TextGrad 优化轨** 与 **Web Demo**。
+
+详细说明见 [Chapter-11/README.md](Chapter-11/README.md)
 
 ---
 
@@ -274,7 +321,9 @@ Chapter-8  工程化整合（travel_multi_agent 包 · 固定图 · 可观测性
     ↓
 Chapter-7  对外协作（MCP 工具协议 · A2A 远程 Agent 协议）
     ↓
-Chapter-10 自我进化（技能库 SKILL.md · skill_view · 评估 / patch / Hub）
+Chapter-9  轨迹转换 · 失败归因（AutoFA · Who&When）
+    ↓
+Chapter-11 平台化（Router SDK · 域插件 · API · Web Demo · Prompt 进化）
 ```
 
 ---
@@ -282,13 +331,19 @@ Chapter-10 自我进化（技能库 SKILL.md · skill_view · 评估 / patch / H
 ## 常见问题
 
 **Q：只配了 `DASHSCOPE_API_KEY`，能跑吗？**  
-A：可以。Chapter-6 / Chapter-8 核心流程可运行；地图、航班等未配置时会回退 stub 或公开备用接口（如 wttr.in 天气）。
+A：可以。Chapter-6 / Chapter-8 / Chapter-11 核心流程可运行；地图、航班等未配置时会回退 stub 或公开备用接口（如 wttr.in 天气）。
 
 **Q：Chapter-6 和 Chapter-8 有什么区别？**  
 A：业务能力等价（6 个子智能体 + 预调查 + 记忆 + 任务规划）。Chapter-6 含三种编排入口与 Supervisor 模式；Chapter-8 以 **LangGraph 固定图** 为主，代码组织为 `travel_multi_agent` 包，并增加 **Tracing**、**pytest** 与 **`book/` 书稿离线案例**。
 
+**Q：Chapter-8 和 Chapter-11 有什么区别？**  
+A：旅行业务能力相近；Chapter-11 在 Chapter-8 工程化基础上 **抽象为通用 SDK**（`agent_framework` + `domains/` 插件），增加 **Router 语义路由**、**FastAPI + SSE**、**TypeScript SDK / Web Demo**、**benchmark 与 TextGrad 优化**，是当前仓库的 **生产化主线**。
+
 **Q：Chapter-8 书稿案例用哪个文件？**  
 A：正文配套精简版 `Chapter-8/book/central_agent_demo_short.py`（离线可跑）；扩展版 `central_agent_demo.py`；联网完整版 `scripts/run_demo.py --stream`。
+
+**Q：Chapter-9 的轨迹从哪来？**  
+A：适配 OpenTelemetry span JSONL（如 `latc.travel-multi-agent` 导出）；仓库 `Chapter-9/testdata/` 含示例 `spans_*.jsonl` 与转换脚本，也可替换为你自己系统的轨迹。
 
 **Q：模型名写 `qwen3.6-plus` 报错？**  
 A：请改为 `qwen-plus`（或 `.env` 里 `DASHSCOPE_CHAT_MODEL` / `DEPLOYMENT_NAME` 使用百炼控制台实际模型名）。
@@ -297,13 +352,7 @@ A：请改为 `qwen-plus`（或 `.env` 里 `DASHSCOPE_CHAT_MODEL` / `DEPLOYMENT_
 A：Chapter-6 为共享库源头；Chapter-7 A2A/MCP 目录各有副本或引用，酒店检索逻辑与 Chapter-5/6 保持一致。
 
 **Q：长期记忆存在哪？**  
-A：Chapter-6 默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；Chapter-8 默认到 `Chapter-8/chroma_memory/`。均可通过 `MEMORY_BACKEND=store` 切换 LangGraph Store（进程内，重启清空）。
-
-**Q：Chapter-10 和 Chapter-6 子智能体什么关系？**  
-A：Chapter-10 完整版通过 `@tool` 包装调用 `Chapter-10/sub_agents.py`（与 Chapter-6 同源能力）；书稿简化版 `book/langgraph_evolu.py` 不调用 SubAgent，仅用 LLM 生成行程。
-
-**Q：Chapter-10 技能存在哪？**  
-A：默认 `./my_agent_memory/skills/`（Hermes 为 `*.md`，书稿版为 `*.json`）；设置 `TRAVEL_DEMO_FRESH=1` 可清空后重跑 Demo。
+A：Chapter-6 默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；Chapter-8 默认到 `Chapter-8/chroma_memory/`；Chapter-11 默认到 `Chapter-11/chroma_memory/`。均可通过 `MEMORY_BACKEND=store` 切换 LangGraph Store（进程内，重启清空）。
 
 ---
 
@@ -317,4 +366,7 @@ A：默认 `./my_agent_memory/skills/`（Hermes 为 `*.md`，书稿版为 `*.jso
 | [Chapter-8/README.md](Chapter-8/README.md) | 工程化多智能体包、Tracing、运行与 API |
 | [Chapter-7/A2A/hotel_recommendation_agent/README.md](Chapter-7/A2A/hotel_recommendation_agent/README.md) | A2A 服务启动与测试 |
 | [Chapter-7/Mcp/README.md](Chapter-7/Mcp/README.md) | MCP Server / Client |
-| [Chapter-10/README.md](Chapter-skill/README.md) | Hermes 自我进化 Agent、两版对比与运行 |
+| [Chapter-9/testdata/README.md](Chapter-9/testdata/README.md) | 轨迹转换与 AutoFA 失败归因 |
+| [Chapter-11/README.md](Chapter-11/README.md) | Router SDK、域插件、API、Web Demo、TextGrad |
+| [Chapter-11/tests/README.md](Chapter-11/tests/README.md) | 测试模块与 phase 对照 |
+| [Chapter-11/docs/](Chapter-11/docs/) | SDK 集成、Router、编排、插件开发等设计文档 |
