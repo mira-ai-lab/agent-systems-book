@@ -99,7 +99,9 @@ Chapter-11 Web Demo 前端另需 **Node.js ≥ 18**（`packages/demo-web`）。
 ### 配置 `.env`（必读）
 
 本书所有需要 LLM / 地图 / 航班的脚本，都通过 **`python-dotenv`** 读取环境变量。  
-**不要**把真实 Key 提交到 Git；仓库只提供模板 **`.env.example`**。
+**不要**把真实 Key 提交到 Git；仓库只提供模板 **[`.env.example`](.env.example)**（含各变量申请链接与默认值注释）。
+
+**配置原则**：通用 Key 放**书根 `.env`**；某章有特殊项时，再复制对应章节的局部 `.env`（如 Chapter-9 的 `Automated_FA/.env.example`）。
 
 #### 第一步：复制模板
 
@@ -113,19 +115,29 @@ copy .env.example .env
 cp .env.example .env
 ```
 
-#### 第二步：填写 Key
+#### 第二步：按场景填写
 
-用编辑器打开根目录 `.env`，把 `your-xxx` 占位符换成你自己的值。
+打开书根 `.env`，把 `your-xxx` 占位符换成真实值。**不必把 `.env.example` 里每一行都取消注释**——只配你当前要跑的章节即可。
 
-**最少配置（能跑通 Chapter-6 / Chapter-8 / Chapter-11 多智能体）：**
+| 使用场景 | 最少要配 | 建议额外配置 |
+|----------|----------|--------------|
+| Chapter-2～5 notebook / 单 Agent | `DASHSCOPE_API_KEY` | Chapter-3 记忆：`DASHSCOPE_EMBEDDING_*` |
+| Chapter-6 / 8 / 11 多智能体 CLI | `DASHSCOPE_API_KEY` | `AMAP_KEY` 或 `BAIDU_MAP_AK`（真实 POI）；`WEATHERAPI_KEY`（天气 MCP） |
+| Chapter-7 MCP / A2A | 书根 LLM Key + 对应章 `requirements.txt` | `HOTEL_MCP_*`（MCP 地址）；A2A 服务目录下局部 `.env` |
+| Chapter-8 导出 trace | 同上 | 六、`OTEL_TRACES_EXPORTER=file` 等（见 `.env.example`） |
+| Chapter-9 失败归因 | 书根或 `Automated_FA/.env` 的 `DASHSCOPE_API_KEY` | `FA_REFERENCE_DATE`（复现样例轨迹时） |
+| Chapter-11 HTTP API + Web Demo | `DASHSCOPE_API_KEY` | 七、`API_PORT`（默认 8780）；生产环境配 `API_KEYS` |
+
+**最少配置（多智能体 CLI 能跑通）：**
 
 | 变量 | 是否必填 | 说明 |
 |------|----------|------|
 | `DASHSCOPE_API_KEY` | **必填** | 阿里云百炼 DashScope API Key |
 | `DASHSCOPE_CHAT_MODEL` | 可选 | 默认 `qwen-plus` |
-| `AMAP_KEY` / `BAIDU_MAP_AK` | 可选 | 地图 POI；不配则部分 Agent 回退模拟数据或备用接口 |
+| `AMAP_KEY` / `BAIDU_MAP_AK` | 可选 | 地图 POI；不配则回退模拟数据或备用接口 |
+| `WEATHERAPI_KEY` | 可选 | 天气 MCP；不配则走高德或 wttr.in |
 
-申请入口见 `.env.example` 内注释（DashScope、高德、百度等）。
+变量分段、可选开关与申请入口的完整说明见 **[`.env.example`](.env.example)**。
 
 #### 第三步：保存并运行
 
@@ -139,27 +151,30 @@ cp .env.example .env
 |------|----------|
 | **Chapter-6** | `chapter6/paths.py` → `Chapter-6/.env` → 书根 `.env` |
 | **Chapter-8** | `travel_multi_agent/config.py` → `Chapter-8/.env` → 书根 `.env` |
-| **Chapter-11** | `agent_framework` 配置 → `Chapter-11/.env` → 书根 `.env` |
+| **Chapter-11** | `agent_framework/config.py` → `Chapter-11/.env` → 书根 `.env` |
 | **Chapter-7 A2A** | `hotel_recommendation_agent/.env` → 书根 `.env` |
-| **Chapter-9 AutoFA** | `Automated_FA/.env`（含 `FA_REFERENCE_DATE`） |
+| **Chapter-9 AutoFA** | `Automated_FA/.env`（可与书根共用 Key；含 `FA_REFERENCE_DATE`） |
 | **Chapter-3 等 notebook** | 多数直接 `load_dotenv(书根/.env)` |
 
-**推荐做法**：把通用 Key（LLM、地图）统一放在**书根 `.env`**；仅某章有特殊配置时，再在对应章节目录放局部 `.env`。
+#### `.env.example` 段落对照
 
-#### `.env.example` 章节对照
-
-`.env.example` 已按用途分段，可按需配置：
+根目录 [`.env.example`](.env.example) 按八段组织；README 只列索引，**详细注释以文件为准**：
 
 | 段落 | 变量示例 | 影响范围 |
 |------|----------|----------|
-| 一、大模型 | `DASHSCOPE_API_KEY`、`OPENAI_*` | Chapter-2～8、Chapter-9、Chapter-11 通用 |
-| 二、地图 POI | `AMAP_KEY`、`BAIDU_MAP_AK` | 酒店 / 景点 / 美食 Agent；Chapter-11 travel 域 |
-| 二点五、天气 MCP | `WEATHERAPI_KEY` | Chapter-6 / Chapter-8 / Chapter-11 WeatherAgent（MCP 优先） |
-| 二点六、酒店 MCP | `HOTEL_MCP_*` | Chapter-7 MCP Server 地址 |
-| 三、航班 | `AVIATIONSTACK_KEY`、`VARIFLIGHT_API_KEY` | Chapter-6 / Chapter-8 / Chapter-11 FlightAgent |
+| 一、大模型 | `DASHSCOPE_API_KEY`、`OPENAI_*` | Chapter-2～11 通用 |
+| 二、地图 POI | `AMAP_KEY`、`BAIDU_MAP_AK` | 酒店 / 景点 / 美食 Agent；Chapter-8 / 11 travel |
+| 二点五、天气 MCP | `WEATHERAPI_KEY`、`WEATHER_USE_MCP` | Chapter-6 / 8 / 11 WeatherAgent |
+| 二点六、酒店 MCP | `HOTEL_MCP_*` | Chapter-7 MCP Server |
+| 二点七、旅行 MCP | `TRAVEL_MCP_*` | Chapter-8 / 11 `travel_agent_mcp_server.py` |
+| 三、航班 | `AVIATIONSTACK_KEY`、`VARIFLIGHT_API_KEY` | Chapter-6 / 8 / 11 FlightAgent |
 | 四、其他 | `TMDB_BEARER_TOKEN` | 扩展 demo |
-| 五、Chapter-6 选项 | `MEMORY_BACKEND=chroma\|store` | 长期记忆后端 |
+| 五、长期记忆 | `MEMORY_BACKEND`、`MEMORY_NAMESPACE_PREFIX` | Chapter-6 / 8 / 11 的 `chroma_memory/` |
 | 六、Chapter-8 可观测性 | `OTEL_TRACES_EXPORTER`、`LOG_LEVEL` | OpenTelemetry span 与结构化日志 |
+| 七、Chapter-11 平台 | `API_PORT`、`API_KEYS`、`CHECKPOINT_*`、`DEFAULT_DOMAIN` | HTTP API、Web Demo、多轮 checkpoint |
+| 八、Chapter-9 AutoFA | `FA_REFERENCE_DATE` 等 | 见 `Chapter-9/Automated_FA/.env.example` |
+
+Chapter-11 运维向变量全集见 [Chapter-11/docs/operations.md](Chapter-11/docs/operations.md)；Web Demo 前端 build 变量见 [Chapter-11/packages/demo-web/README.md](Chapter-11/packages/demo-web/README.md)（`VITE_API_BASE_URL`）。
 
 > **安全提示**：`.env` 已在 `.gitignore` 中忽略；若误提交，请立即在云平台轮换 Key。
 
