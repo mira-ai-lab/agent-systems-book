@@ -55,6 +55,18 @@ agent-systems-book/
 
 Chapter-6 整合了前几章能力，是全书的主线 demo；**Chapter-8** 在相同业务能力上提供 **工程化 Python 包**（`travel_multi_agent`）、**OpenTelemetry 可观测性** 与 **书稿离线案例**（`book/`）；Chapter-7 演示 **MCP 工具化** 与 **A2A 服务化** 两种对外协作方式；**Chapter-9** 基于 Chapter-8 导出的 span 轨迹做 **格式转换与 Automated Failure Attribution（AutoFA）**；**Chapter-11** 将 Chapter-8 能力 **平台化** 为通用 Router SDK（`agent_framework` + 域插件），并提供 HTTP API、TypeScript SDK 与 Web Demo。
 
+> **关于书稿第 10 章（自演化 Agent）**  
+> 正文第 10 章讲解 Agent **自演化**（评估反馈、Prompt / 策略迭代与复用等）。本仓库**不设独立 `Chapter-10/` 目录**，该主题已**并入 `Chapter-11/`**，与 Router、编排、benchmark 同一工作区：
+>
+> | 书稿概念 | 仓库落点（Chapter-11） |
+> |----------|------------------------|
+> | 自演化 / 优化闭环 | `agent_framework/optimization/`（与生产 LangGraph **并行**的优化轨） |
+> | 基于评测的 Prompt 迭代 | TextGrad + `scripts/travel/eval_*.py` / `optimize_*.py` |
+> | 交互式理解优化流程 | `notebooks/planner_b1_textgrad_graph.ipynb` |
+> | 优化产物持久化 | `data/benchmark/**/optimized/` |
+>
+> 安装可选依赖：`pip install -e ".[evolution]"`。详见 [Chapter-11/docs/prompt_evolution.md](Chapter-11/docs/prompt_evolution.md) 与 [Chapter-11/README.md](Chapter-11/README.md) 中「Benchmark 与 Prompt 进化」小节。
+
 ---
 
 ## 环境准备
@@ -289,7 +301,7 @@ python evaluate.py
 
 ## Chapter-11 快速开始
 
-Chapter-11 是 **通用多智能体路由引擎（agent-platform）**：`agent_framework/` 与业务域解耦，**travel** 为仓库内完整示例域；整合 Router（L1）与 LangGraph Fixed Graph / Supervisor（L2）。
+Chapter-11 是 **通用多智能体路由引擎（agent-platform）**：`agent_framework/` 与业务域解耦，**travel** 为仓库内完整示例域；整合 Router（L1）与 LangGraph Fixed Graph / Supervisor（L2）。**书稿第 10 章自演化**（Prompt / 策略迭代）亦在本章 `optimization/` 与 TextGrad 脚本中，无独立 `Chapter-10/` 目录。
 
 | 用途 | 命令 |
 |------|------|
@@ -339,6 +351,7 @@ Chapter-7  对外协作（MCP 工具协议 · A2A 远程 Agent 协议）
 Chapter-9  轨迹转换 · 失败归因（AutoFA · Who&When）
     ↓
 Chapter-11 平台化（Router SDK · 域插件 · API · Web Demo · Prompt 进化）
+         ↑ 书稿第 10 章「自演化」并入本章（optimization 轨 · TextGrad · benchmark）
 ```
 
 ---
@@ -366,6 +379,9 @@ A：请改为 `qwen-plus`（或 `.env` 里 `DASHSCOPE_CHAT_MODEL` / `DEPLOYMENT_
 **Q：Chapter-6 和 Chapter-7 的 `travel_common` 是什么关系？**  
 A：Chapter-6 为共享库源头；Chapter-7 A2A/MCP 目录各有副本或引用，酒店检索逻辑与 Chapter-5/6 保持一致。
 
+**Q：书稿第 10 章（自演化 Agent）代码在哪？**  
+A：仓库**无 `Chapter-10/` 目录**。正文自演化主题已并入 **Chapter-11**：`agent_framework/optimization/`、TextGrad 脚本与 `notebooks/planner_b1_textgrad_graph.ipynb`；与主编排并行，产物写入 `data/benchmark/**/optimized/`。见 [prompt_evolution.md](Chapter-11/docs/prompt_evolution.md)。
+
 **Q：长期记忆存在哪？**  
 A：Chapter-6 默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；Chapter-8 默认到 `Chapter-8/chroma_memory/`；Chapter-11 默认到 `Chapter-11/chroma_memory/`。均可通过 `MEMORY_BACKEND=store` 切换 LangGraph Store（进程内，重启清空）。
 
@@ -382,6 +398,7 @@ A：Chapter-6 默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；Chapter-8 
 | [Chapter-7/A2A/hotel_recommendation_agent/README.md](Chapter-7/A2A/hotel_recommendation_agent/README.md) | A2A 服务启动与测试 |
 | [Chapter-7/Mcp/README.md](Chapter-7/Mcp/README.md) | MCP Server / Client |
 | [Chapter-9/testdata/README.md](Chapter-9/testdata/README.md) | 轨迹转换与 AutoFA 失败归因 |
-| [Chapter-11/README.md](Chapter-11/README.md) | Router SDK、域插件、API、Web Demo、TextGrad |
+| [Chapter-11/README.md](Chapter-11/README.md) | Router SDK、域插件、API、Web Demo、TextGrad（含书稿第 10 章自演化） |
+| [Chapter-11/docs/prompt_evolution.md](Chapter-11/docs/prompt_evolution.md) | Prompt 进化 / TextGrad / benchmark 优化轨 |
 | [Chapter-11/tests/README.md](Chapter-11/tests/README.md) | 测试模块与 phase 对照 |
 | [Chapter-11/docs/](Chapter-11/docs/) | SDK 集成、Router、编排、插件开发等设计文档 |
