@@ -1,4 +1,4 @@
-"""Phase 16：travel 产品域 + 跨域推断 + task_decomposition + hybrid profile。"""
+﻿"""Phase 16：travel 产品域 + 跨域推断 + task_decomposition + hybrid profile。"""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -53,7 +53,7 @@ def test_select_domain_picks_best():
 def test_parse_domain_classification_filters_unknown():
     parsed = parse_domain_classification_response(
         [{"name": "travel", "score": 0.9}, {"name": "unknown", "score": 0.8}],
-        known_domains={"travel", "customer_service"},
+        known_domains={"travel", "demo"},
     )
     assert len(parsed) == 1
     assert parsed[0].name == "travel"
@@ -100,12 +100,12 @@ def test_resolve_request_domain_explicit():
 def test_resolve_request_domain_auto_classify():
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock(
-        return_value=AIMessage(content='[{"name": "customer_service", "score": 0.92}]')
+        return_value=AIMessage(content='[{"name": "travel", "score": 0.92}]')
     )
     with patch.dict("os.environ", {"DEFAULT_DOMAIN": ""}, clear=False):
         domain, candidates = asyncio.run(
-            resolve_request_domain("我要咨询退货政策", None, llm=mock_llm)
+            resolve_request_domain("规划杭州三日游", None, llm=mock_llm)
         )
-    assert domain == "customer_service"
+    assert domain == "travel"
     assert candidates is not None
-    assert candidates[0].name == "customer_service"
+    assert candidates[0].name == "travel"

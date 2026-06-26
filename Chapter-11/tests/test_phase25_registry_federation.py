@@ -1,4 +1,4 @@
-"""Phase 25 P1：Registry 联邦（25.5–25.8）。"""
+﻿"""Phase 25 P1：Registry 联邦（25.5–25.8）。"""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -29,7 +29,7 @@ def test_federation_cluster_name():
 
 def test_normalize_federated_agent():
     entry = normalize_federated_agent(
-        {"name": "RemoteFAQ", "domain": "customer_service", "source": "static"},
+        {"name": "RemoteFAQ", "domain": "travel", "source": "static"},
         cluster="remote-a",
         base_url="http://remote-a:8780",
     )
@@ -43,7 +43,7 @@ def test_list_federated_agents_merges_local_and_remote():
         "agents": [
             {
                 "name": "RemoteFAQ",
-                "domain": "customer_service",
+                "domain": "travel",
                 "source": "static",
                 "description": "remote faq",
             }

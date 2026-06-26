@@ -1,4 +1,4 @@
-# 生产运维指南
+﻿# 生产运维指南
 
 本文档面向 **agent-platform 0.22.0** 工作区（`Chapter-11`）的部署与日常运维。与书稿主线 `Chapter-8/` 相比，本分支提供 HTTP API、Docker、多租户、异步 Job、Router SDK 等企业化能力。
 
@@ -121,13 +121,13 @@ GitHub Actions：`.github/workflows/chapter8-upgrade-ci.yml`
 - Python：`pytest` 全量
 - npm：`packages/router-client` unit + integration
 - Demo Web build
-- **版本同步**：`python scripts/sync_package_versions.py --check`
+- **版本同步**：`python scripts/dev/sync_package_versions.py --check`
 
 发版流程：
 
 ```bash
 # 1.  bump pyproject.toml version
-python scripts/sync_package_versions.py --sync
+python scripts/dev/sync_package_versions.py --sync
 pytest
 # 2. tag / release（npm 包当前为 monorepo 内 workspace，未发布到 npm registry）
 ```
@@ -138,7 +138,7 @@ pytest
 
 ```bash
 pip install -e domains/
-# 或 pip install -e domains/travel domains/customer_service
+# 或 pip install -e domains/
 ```
 
 ## 故障排查

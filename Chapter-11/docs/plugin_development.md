@@ -1,4 +1,4 @@
-# 领域插件开发指南
+﻿# 领域插件开发指南
 
 `agent-platform` 通过 **DomainPlugin** + **entry_points** 扩展业务领域。框架只提供固定图编排；领域代码独立打包。
 
@@ -76,4 +76,4 @@ curl -H "X-API-Key: $KEY" -X POST http://localhost:8780/v1/chat \
 
 ## 6. 与 travel 示例的关系
 
-`travel` 是书稿附带的**完整参考实现**（含外部 API、MCP），不是框架默认。新业务请复制 `demo` 或 `customer_service` 骨架，而非修改框架。
+`travel` 是书稿附带的**完整参考实现**（含外部 API、MCP），不是框架默认。新业务请复制 `demo` 或 `travel` 骨架，而非修改框架。

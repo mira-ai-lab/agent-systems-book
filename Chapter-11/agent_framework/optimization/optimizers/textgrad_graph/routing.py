@@ -30,6 +30,7 @@ async def optimize_agent_routing_prompt_graph(
     e2e_profile: str = "workflow",
     e2e_timeout_sec: Optional[float] = None,
     enable_guess_agent: bool = True,
+    max_failure_cases_per_step: int = 3,
 ) -> OptimizationResult:
     """优化 agent_routing；decomposition prompt 固定（可传入当前 decomposition_prompt）。"""
     from domains.travel.prompt_bundle import TravelPrompts
@@ -54,4 +55,5 @@ async def optimize_agent_routing_prompt_graph(
         e2e_profile=e2e_profile,
         e2e_timeout_sec=e2e_timeout_sec,
         enable_guess_agent=enable_guess_agent,
+        max_failure_cases_per_step=max_failure_cases_per_step,
     )

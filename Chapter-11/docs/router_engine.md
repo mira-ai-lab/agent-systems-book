@@ -1,4 +1,4 @@
-# Router Engine（Phase 10–11）
+﻿# Router Engine（Phase 10–11）
 
 
 
@@ -91,7 +91,7 @@ curl -X POST http://127.0.0.1:8780/v1/chat \
 
   -d '{
 
-    "domain": "customer_service",
+    "domain": "travel",
 
     "profile": "auto",
 
@@ -119,7 +119,7 @@ from agent_framework.bootstrap.platform import create_runtime
 
 
 
-runtime = create_runtime("customer_service", profile="auto")
+runtime = create_runtime("travel", profile="auto")
 
 result = await runtime.process_request(
 
@@ -230,7 +230,7 @@ curl -X POST http://127.0.0.1:8780/v1/domains/demo/agents \
 
 ### 产品域
 
-- `travel`、`customer_service` 均为正式产品域（`is_sample=false`）
+- `travel`、`travel` 均为正式产品域（`is_sample=false`）
 - 推荐：`profile=auto`；复杂行程可用 `domain=travel`
 
 ## Phase 17 — en locale + Router 预填 execution_plan
@@ -261,7 +261,7 @@ await orchestrator.process_request(query, prefilled_execution_plan=prefilled)
 ```bash
 curl -X POST http://127.0.0.1:8780/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"query":"What is your return policy?","domain":"customer_service","locale":"en"}'
+  -d '{"query":"Plan a 3-day Hangzhou trip","domain":"travel","locale":"en"}'
 ```
 
 - 请求/响应字段：`locale`（默认 `zh`）
@@ -279,8 +279,8 @@ curl -X POST http://127.0.0.1:8780/v1/chat \
 
 ### 领域 prompt 英文化
 
-- `domains/customer_service/prompts_en.py`
-- `domains/travel/prompts_en.py`
+- `domains/travel/locales/en.json`
+- `domains/travel/locales/en.json`
 - `CustomerServicePrompts.build(locale="en")` / `TravelPrompts.build(locale="en")`
 - `demo` 插件内置 en 话术
 
@@ -305,8 +305,8 @@ curl -X POST http://127.0.0.1:8780/v1/chat \
 ```python
 from agent_framework.bootstrap.platform import create_orchestrator
 
-orch = create_orchestrator("customer_service")  # RouterOrchestrator, entry_profile=workflow
-result = await orch.process_request("退货政策是什么？")
+orch = create_orchestrator("travel")  # RouterOrchestrator, entry_profile=workflow
+result = await orch.process_request("规划杭州三日游")
 # result["routing_plan"], result["prefilled via backend kwargs"]
 ```
 
@@ -333,7 +333,7 @@ result = await orch.process_request("退货政策是什么？")
 ```python
 from agent_framework.stream.events import public_event
 
-async for event in runtime.iter_request_stream("退货政策是什么？", thread_id="t1"):
+async for event in runtime.iter_request_stream("规划杭州三日游", thread_id="t1"):
     print(public_event(event)["type"])
 ```
 
@@ -342,7 +342,7 @@ async for event in runtime.iter_request_stream("退货政策是什么？", threa
 ```bash
 curl -N -X POST http://127.0.0.1:8780/v1/chat/stream \
   -H "Content-Type: application/json" \
-  -d '{"query":"退货政策是什么？","domain":"customer_service","profile":"auto"}'
+  -d '{"query":"规划杭州三日游","domain":"travel","profile":"auto"}'
 ```
 
 响应 `Content-Type: text/event-stream`；每条事件形如：
@@ -383,7 +383,7 @@ curl -X POST .../v1/domains/demo/agents -d '{"name":"GlobalFAQ","scope":"shared"
 ```python
 from agent_framework.bootstrap import route
 
-result = await route("退货政策是什么？", domain="customer_service")
+result = await route("规划杭州三日游", domain="travel")
 # result["domain"], result["routing_plan"], result["final_response"]
 ```
 
@@ -419,21 +419,21 @@ SDK / HTTP 响应 / SSE `final` 事件统一顶层字段：
 
 ### Demo 分层（24.4）
 
-- **产品默认**：`python scripts/run_demo.py` → `customer_service` + `profile=auto`
+- **产品默认**：`python scripts/run_demo.py` → `travel` + `profile=auto`
 - **能力展示**：`python scripts/run_demo.py --domain travel --profile workflow --show-graph`
 - **MCP**：`travel_agent_mcp_server.py` 为 travel 书稿域；产品路径见 `run_demo.py`
 
 ### Chroma 持久化 KB（24.6）
 
 - 路径：`data/knowledge/{domain}/documents.json` + `chroma/`（与 `chroma_memory/` 隔离）
-- Ingest：`python scripts/ingest_knowledge.py --domain customer_service` 或 `--all`
+- Ingest：`python scripts/dev/ingest_knowledge.py --domain travel` 或 `--all`
 - `RouterConfig.knowledge_storage`：`auto`（有 persisted 则 chroma）| `memory` | `chroma`
 
 ### KB 管理 API（24.7）
 
 ```bash
-GET  /v1/domains/customer_service/knowledge
-POST /v1/domains/customer_service/knowledge
+GET  /v1/domains/travel/knowledge
+POST /v1/domains/travel/knowledge
 # body: { "documents": [...], "replace": false, "embedding_backend": "hashing" }
 ```
 
@@ -469,7 +469,7 @@ POST /v1/domains/customer_service/knowledge
 #### Agent 目录 API（24.12）
 
 ```bash
-GET /v1/agents?domain=customer_service&scope=shared&source=dynamic
+GET /v1/agents?domain=travel&scope=shared&source=dynamic
 ```
 
 ### i18n parity（24.13–24.16）
@@ -484,7 +484,7 @@ GET /v1/agents?domain=customer_service&scope=shared&source=dynamic
 - `routing_plan.metadata.profile_reason`：如 `strong_agents=2>=0.5: FAQAgent=0.90, TicketAgent=0.85`
 - adaptive 流式：`SupervisorOrchestrator.iter_request_stream` 产出 `handoff.completed` 事件
 - 领域定位：见 [domains.md](domains.md)
-- 发版回归：`python scripts/product_readiness_check.py`
+- 发版回归：`python scripts/dev/product_readiness_check.py`
 
 ### 多租户 KB（25.1–25.4）
 
@@ -504,7 +504,7 @@ GET /v1/agents?domain=customer_service&scope=shared&source=dynamic
 ### Embedding 召回评测（25.9–25.10）
 
 - Fixture：`data/knowledge/benchmark/fixtures.json`
-- 脚本：`python scripts/benchmark_knowledge_recall.py --backends hashing,embedding --json`
+- 脚本：`python scripts/dev/benchmark_knowledge_recall.py --backends hashing,embedding --json`
 - 报告字段：`hit@1/3/5`、`raw_score`、`normalized_score`、A/B `comparison`
 
 ### 前端 SDK（25.11–25.12）
@@ -559,8 +559,8 @@ const status = await client.getJob(job.job_id);
 ### 版本同步（26.4）
 
 ```bash
-python scripts/sync_package_versions.py --check
-python scripts/sync_package_versions.py --sync 0.22.0
+python scripts/dev/sync_package_versions.py --check
+python scripts/dev/sync_package_versions.py --sync 0.22.0
 ```
 
 `agent-platform`、`router-client`、`demo-web` 共用 semver；详见 [sdk_integration.md](sdk_integration.md#发版与版本同步264)。

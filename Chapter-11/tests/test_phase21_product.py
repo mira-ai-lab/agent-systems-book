@@ -1,4 +1,4 @@
-"""Phase 21–23：向量 KB + Agent Catalog + domain locales JSON。"""
+﻿"""Phase 21–23：向量 KB + Agent Catalog + domain locales JSON。"""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
@@ -42,20 +42,26 @@ def isolated_kb(tmp_path, monkeypatch):
     reset_domain_knowledge_cache()
 
 
-def test_vector_knowledge_store_matches_faq(isolated_kb):
-    store = get_domain_knowledge_store("customer_service")
+def test_vector_knowledge_store_matches_weather(isolated_kb):
+    from agent_framework.router.kb.repository import ingest_domain_knowledge
+
+    ingest_domain_knowledge("travel", embedding_backend="hashing")
+    store = get_domain_knowledge_store("travel")
     assert store is not None
-    hits = store.match_agents("退换货政策", [], min_score=0.15)
+    hits = store.match_agents("暴雨天气户外行程", [], min_score=0.15)
     assert hits
-    assert hits[0][0] == "FAQAgent"
+    assert hits[0][0] == "WeatherAgent"
 
 
 def test_resolve_knowledge_hybrid_vector_and_keyword(isolated_kb):
-    registry = get_domain_plugin("customer_service").create_registry()
+    from agent_framework.router.kb.repository import ingest_domain_knowledge
+
+    ingest_domain_knowledge("travel", embedding_backend="hashing")
+    registry = get_domain_plugin("travel").create_registry()
     candidates, meta = resolve_knowledge_candidates(
         registry,
-        domain="customer_service",
-        query="咨询退货政策",
+        domain="travel",
+        query="暴雨天气对行程的影响",
         events=[],
         config=RouterConfig(knowledge_backend="hybrid", knowledge_min_score=0.15),
     )
@@ -64,28 +70,31 @@ def test_resolve_knowledge_hybrid_vector_and_keyword(isolated_kb):
 
 
 def test_router_engine_vector_knowledge_metadata(isolated_kb):
-    registry = get_domain_plugin("customer_service").create_registry()
+    from agent_framework.router.kb.repository import ingest_domain_knowledge
+
+    ingest_domain_knowledge("travel", embedding_backend="hashing")
+    registry = get_domain_plugin("travel").create_registry()
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock(
         side_effect=[
-            AIMessage(content='["咨询退货"]'),
-            AIMessage(content='[{"name": "FAQAgent", "score": 0.4}]'),
+            AIMessage(content='["查天气"]'),
+            AIMessage(content='[{"name": "WeatherAgent", "score": 0.4}]'),
         ]
     )
     plan = asyncio.run(
         RouterEngine(
             mock_llm,
             registry,
-            domain="customer_service",
+            domain="travel",
             config=RouterConfig(
                 enable_instruction_build=False,
                 enable_task_decomposition=False,
                 knowledge_backend="vector",
                 knowledge_vector_min_score=0.15,
             ),
-        ).route("退换货政策")
+        ).route("暴雨天气户外行程")
     )
-    assert plan.candidates[0].name == "FAQAgent"
+    assert plan.candidates[0].name == "WeatherAgent"
     assert plan.candidates[0].score >= 0.15
     assert any(m.get("source") == "vector" for m in plan.metadata["knowledge_matches"])
 
@@ -103,12 +112,12 @@ def test_shared_dynamic_agent_visible_in_all_domains():
         ),
     )
     merged_demo, _ = merge_dynamic_agents("demo", base)
-    merged_cs, _ = merge_dynamic_agents(
-        "customer_service",
-        get_domain_plugin("customer_service").create_registry(),
+    merged_travel, _ = merge_dynamic_agents(
+        "travel",
+        get_domain_plugin("travel").create_registry(),
     )
     assert "GlobalPolicyAgent" in merged_demo.get_agent_names()
-    assert "GlobalPolicyAgent" in merged_cs.get_agent_names()
+    assert "GlobalPolicyAgent" in merged_travel.get_agent_names()
     assert get_dynamic_agent_store().list_agents(SHARED_DOMAIN)[0].name == "GlobalPolicyAgent"
 
 
@@ -132,9 +141,9 @@ def test_summarize_domain_agents_includes_dynamic():
     assert "RuntimeAgent" in text
 
 
-def test_domain_locale_json_customer_service_zh():
-    prompts = domain_prompts_from_locale("customer_service", "zh")
-    assert "客服" in prompts.central_agent_system
+def test_domain_locale_json_travel_zh():
+    prompts = domain_prompts_from_locale("travel", "zh")
+    assert "旅行" in prompts.central_agent_system or "规划" in prompts.central_agent_system
 
 
 def test_domain_locale_json_travel_en():

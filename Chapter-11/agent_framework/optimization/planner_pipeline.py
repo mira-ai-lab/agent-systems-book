@@ -78,6 +78,7 @@ async def run_planner_optimization(
     e2e_profile: str = "workflow",
     e2e_timeout_sec: Optional[float] = None,
     enable_guess_agent: bool = True,
+    max_failure_cases_per_step: int = 3,
 ) -> PlannerOptimizationOutput:
     current_decomposition = decomposition_prompt
     current_routing = agent_routing
@@ -103,6 +104,7 @@ async def run_planner_optimization(
                 e2e_profile=e2e_profile,
                 e2e_timeout_sec=e2e_timeout_sec,
                 enable_guess_agent=enable_guess_agent,
+                max_failure_cases_per_step=max_failure_cases_per_step,
             )
         elif backend == "textgrad_lib":
             decomposition_result = await optimize_decomposition_prompt_textgrad(
@@ -150,6 +152,7 @@ async def run_planner_optimization(
                 e2e_profile=e2e_profile,
                 e2e_timeout_sec=e2e_timeout_sec,
                 enable_guess_agent=enable_guess_agent,
+                max_failure_cases_per_step=max_failure_cases_per_step,
             )
         elif backend == "textgrad_lib":
             routing_result = await optimize_agent_routing_prompt_textgrad(

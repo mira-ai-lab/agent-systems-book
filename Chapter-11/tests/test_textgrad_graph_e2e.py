@@ -26,7 +26,8 @@ def test_build_e2e_expectation_label_contains_agents():
     case = load_decomposition_fixtures().cases_for_split("dev")[0]
     label = build_e2e_expectation_label(case)
     assert case.case_id in label
-    assert "required_agents" in label
+    assert "WeatherAgent" in label
+    assert "Rule scorer checklist" in label
 
 
 @pytest.mark.textgrad

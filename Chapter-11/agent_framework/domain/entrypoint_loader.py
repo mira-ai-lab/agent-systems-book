@@ -43,11 +43,10 @@ def load_dev_fallback_plugins() -> List[DomainPlugin]:
     loaded: List[DomainPlugin] = []
     try:
         from domains.travel.plugin import TRAVEL_PLUGIN
-        from domains.customer_service.plugin import CUSTOMER_SERVICE_PLUGIN
         from domains.demo.plugin import DEMO_PLUGIN
     except ImportError:
         return loaded
-    for plugin in (TRAVEL_PLUGIN, CUSTOMER_SERVICE_PLUGIN, DEMO_PLUGIN):
+    for plugin in (TRAVEL_PLUGIN, DEMO_PLUGIN):
         register_domain(plugin)
         loaded.append(plugin)
     return loaded

@@ -1,4 +1,4 @@
-# @agent-platform/router-client
+﻿# @agent-platform/router-client
 
 agent-platform 企业路由引擎的最小 TypeScript/JavaScript 客户端（Phase 25 P3）。
 
@@ -35,8 +35,8 @@ const client = createRouterClient({
 });
 
 // 同步 route（推荐：仅 query + profile=auto）
-const result = await client.route("退货政策是什么？", {
-  domain: "customer_service",
+const result = await client.route("规划杭州三日游", {
+  domain: "travel",
   profile: "auto",
 });
 console.log(result.final_response);
@@ -44,7 +44,7 @@ console.log(result.routing_plan);
 console.log(result.knowledge_matches);
 
 // SSE 流式
-for await (const event of client.routeStream("退货政策是什么？")) {
+for await (const event of client.routeStream("规划杭州三日游")) {
   if (event.type === "final") {
     console.log("done", event.data?.final_response);
   } else if (event.type.startsWith("router.")) {

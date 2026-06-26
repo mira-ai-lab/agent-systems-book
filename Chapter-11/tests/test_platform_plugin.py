@@ -1,6 +1,6 @@
-"""领域插件与平台 SDK 入口测试。"""
+﻿"""领域插件与平台 SDK 入口测试。"""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -11,7 +11,6 @@ from agent_framework.orchestration.fixed_graph.orchestrator import LangGraphOrch
 def test_list_builtin_domains():
     names = {d["name"] for d in list_domains()}
     assert "travel" in names
-    assert "customer_service" in names
     assert "demo" in names
 
 
@@ -55,31 +54,9 @@ def test_create_orchestrator_travel(monkeypatch):
     assert isinstance(orch, RouterOrchestrator)
     assert orch.domain == "travel"
     assert orch.entry_profile == "workflow"
-    assert orch.registry.get_agent_names()
-    assert "WeatherAgent" in orch.registry.get_agent_names()
-
-
-def test_create_orchestrator_customer_service(monkeypatch):
-    from agent_framework.bootstrap.platform import create_orchestrator
-    from agent_framework.orchestration.router_orchestrator import RouterOrchestrator
-
-    mock_llm = MagicMock()
-    monkeypatch.setattr(
-        "agent_framework.orchestration.router_orchestrator.setup_observability",
-        lambda: None,
-    )
-    monkeypatch.setattr(
-        "agent_framework.orchestration.router_orchestrator.load_project_dotenv",
-        lambda: None,
-    )
-
-    orch = create_orchestrator("customer_service", enable_memory=False, llm=mock_llm)
-    assert isinstance(orch, RouterOrchestrator)
-    assert orch.domain == "customer_service"
-    assert orch.entry_profile == "workflow"
     names = orch.registry.get_agent_names()
-    assert "FAQAgent" in names
-    assert "TicketAgent" in names
+    assert "WeatherAgent" in names
+    assert "FlightAgent" in names
 
 
 def test_register_custom_domain():

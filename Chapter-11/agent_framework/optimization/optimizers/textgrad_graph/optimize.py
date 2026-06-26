@@ -11,8 +11,8 @@ from agent_framework.optimization.core.rollback import should_accept_candidate
 from agent_framework.optimization.decomposition.evaluator import evaluate_case, evaluate_decomposition_benchmark
 from agent_framework.optimization.decomposition.fixtures import DecompositionFixtures, load_decomposition_fixtures
 from agent_framework.optimization.decomposition.prompt_optimizer import collect_failures, extract_decomposition_prompt
-from agent_framework.optimization.e2e.collect import collect_e2e_failures
-from agent_framework.optimization.e2e.evaluator import evaluate_e2e_benchmark, evaluate_e2e_case
+from agent_framework.optimization.e2e.collect import evaluate_e2e_train_cases
+from agent_framework.optimization.e2e.evaluator import evaluate_e2e_benchmark
 from agent_framework.optimization.e2e.runtime import build_e2e_orchestrator
 from agent_framework.optimization.objective import OptimizationObjective
 from agent_framework.optimization.optimizers.textgrad_lib._import import require_textgrad
@@ -178,6 +178,7 @@ async def optimize_planner_prompt_graph(
     e2e_profile: str = "workflow",
     e2e_timeout_sec: Optional[float] = None,
     enable_guess_agent: bool = True,
+    max_failure_cases_per_step: int = 3,
 ) -> OptimizationResult:
     """通过 textgrad 计算图优化 planner prompt。
 
@@ -223,20 +224,15 @@ async def optimize_planner_prompt_graph(
                 e2e_profile=e2e_profile,
                 enable_guess_agent=enable_guess_agent,
             )
-            failures = await collect_e2e_failures(
+            train_eval = await evaluate_e2e_train_cases(
                 orchestrator,
                 train_cases,
                 failure_threshold=failure_threshold,
                 timeout_sec=e2e_timeout_sec,
+                max_failure_cases=max_failure_cases_per_step,
             )
-            train_scores = []
-            for case in train_cases:
-                item = await evaluate_e2e_case(
-                    orchestrator,
-                    case,
-                    timeout_sec=e2e_timeout_sec,
-                )
-                train_scores.append(item.score.total)
+            failures = train_eval.failures
+            train_scores = train_eval.train_scores
         else:
             planner = build_decomposition_planner(
                 best_decomposition,
@@ -286,8 +282,7 @@ async def optimize_planner_prompt_graph(
                 e2e_timeout_sec=e2e_timeout_sec,
                 enable_guess_agent=enable_guess_agent,
             )
-            failure_cases = [case for _, case in failures]
-            run_e2e_graph_step(graph, failure_cases, constraints=constraints)
+            run_e2e_graph_step(graph, failures, constraints=constraints)
             candidate_decomposition, candidate_routing = graph.read_optimized_prompts()
         else:
             graph = PlannerTextGradGraph.create(

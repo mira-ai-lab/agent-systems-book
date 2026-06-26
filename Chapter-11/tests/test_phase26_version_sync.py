@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_sync_module():
-    path = ROOT / "scripts" / "sync_package_versions.py"
+    path = ROOT / "scripts" / "dev" / "sync_package_versions.py"
     mod_name = "sync_package_versions"
     spec = importlib.util.spec_from_file_location(mod_name, path)
     assert spec and spec.loader

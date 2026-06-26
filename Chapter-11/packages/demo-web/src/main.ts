@@ -97,13 +97,13 @@ function mount(): void {
   baseInput.value = DEFAULT_BASE;
 
   const queryInput = el("textarea", "textarea") as HTMLTextAreaElement;
-  queryInput.placeholder = "输入 query，例如：退货政策是什么？";
+  queryInput.placeholder = "输入 query，例如：规划杭州三日游";
   queryInput.rows = 3;
-  queryInput.value = "退货政策是什么？";
+  queryInput.value = "帮我查北京明天天气，并推荐一家安静的酒店";
 
   const domainInput = el("input", "input") as HTMLInputElement;
-  domainInput.placeholder = "domain（可选，如 customer_service）";
-  domainInput.value = "customer_service";
+  domainInput.placeholder = "domain（可选，如 travel）";
+  domainInput.value = "travel";
 
   const apiKeyInput = el("input", "input") as HTMLInputElement;
   apiKeyInput.type = "password";

@@ -1,4 +1,4 @@
-# 编排模型说明：多范式平台（Fixed Graph + Supervisor）
+﻿# 编排模型说明：多范式平台（Fixed Graph + Supervisor）
 
 `agent-platform` 是 **多编排范式** 的多智能体平台 SDK，并可选 **Router Engine（Phase 10）** 作为企业默认入口。默认 **Workflow Profile**（原 Fixed Graph）；`profile=auto` 时先 classification 再选执行后端。
 
@@ -10,7 +10,7 @@ from agent_framework.bootstrap.platform import create_runtime
 await create_runtime("travel", mode="fixed_graph").process_request("北京天气")
 await create_runtime("travel", mode="supervisor").process_request("北京天气")
 await create_runtime("travel", mode="supervisor", transport="mixed").process_request("订上海酒店")
-await create_runtime("customer_service", profile="auto").process_request("投诉并咨询退货")
+await create_runtime("travel", profile="auto").process_request("规划多城市旅行")
 ```
 
 HTTP：`profile=auto|workflow|adaptive`（推荐 `auto`）；遗留 `mode` 仍可用。

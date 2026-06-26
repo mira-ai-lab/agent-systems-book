@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Tuple
 
 from agent_framework.optimization.decomposition.fixtures import DecompositionBenchmarkCase
+from agent_framework.optimization.e2e.evaluator import E2eCaseResult
 
 from .e2e_graph import PlannerPromptE2eGraph
 
 
 def run_e2e_graph_step(
     graph: PlannerPromptE2eGraph,
-    failure_cases: List[DecompositionBenchmarkCase],
+    failures: List[Tuple[E2eCaseResult, DecompositionBenchmarkCase]],
     *,
     constraints: List[str],
 ) -> None:
@@ -20,12 +21,12 @@ def run_e2e_graph_step(
 
     tg, _, _, TextualGradientDescent = require_textgrad()
 
-    if not failure_cases:
+    if not failures:
         return
 
     losses = []
-    for case in failure_cases:
-        _, loss = graph.forward_case(case)
+    for result, case in failures:
+        _, loss = graph.forward_failure(result, case)
         losses.append(loss)
 
     total_loss = tg.sum(losses) if len(losses) > 1 else losses[0]

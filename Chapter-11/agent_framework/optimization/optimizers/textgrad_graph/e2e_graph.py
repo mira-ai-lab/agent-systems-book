@@ -8,6 +8,7 @@ from typing import Any, List, Literal, Optional
 from langchain_openai import ChatOpenAI
 
 from agent_framework.optimization.decomposition.fixtures import DecompositionBenchmarkCase
+from agent_framework.optimization.e2e.evaluator import E2eCaseResult
 from agent_framework.optimization.decomposition.prompt_optimizer import extract_decomposition_prompt
 from agent_framework.optimization.optimizers.textgrad_lib.adapter import (
     decomposition_prompt_variable,
@@ -78,7 +79,12 @@ class PlannerPromptE2eGraph:
         )
         return self._bridge.format_e2e_output(result)
 
-    def forward_case(self, case: DecompositionBenchmarkCase):
+    def forward_case(
+        self,
+        case: DecompositionBenchmarkCase,
+        *,
+        rule_failures: Optional[List[str]] = None,
+    ):
         from agent_framework.optimization.optimizers.textgrad_lib._import import require_textgrad
 
         _, Variable, _, _ = require_textgrad()
@@ -103,12 +109,16 @@ class PlannerPromptE2eGraph:
             }
         )
         label = Variable(
-            build_e2e_expectation_label(case),
+            build_e2e_expectation_label(case, rule_failures=rule_failures),
             requires_grad=False,
             role_description="e2e benchmark expectation specification",
         )
         loss = self._loss_fn([e2e_out, label])
         return e2e_out, loss
+
+    def forward_failure(self, result: E2eCaseResult, case: DecompositionBenchmarkCase):
+        """Forward a train failure using rule scorer details for loss alignment."""
+        return self.forward_case(case, rule_failures=list(result.score.details))
 
     def trainable_parameters(self) -> List[Any]:
         params = []

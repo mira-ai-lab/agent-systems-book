@@ -11,7 +11,7 @@ import pytest
 pytest.importorskip("mcp")
 
 _CHAPTER8 = Path(__file__).resolve().parent.parent
-_MCP_SCRIPT = _CHAPTER8 / "scripts" / "travel_agent_mcp_server.py"
+_MCP_SCRIPT = _CHAPTER8 / "scripts" / "travel" / "travel_agent_mcp_server.py"
 
 
 def _load_mcp_module(monkeypatch):

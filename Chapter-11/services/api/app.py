@@ -66,13 +66,13 @@ class ChatRequest(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "query": "退货政策是什么？",
+                    "query": "帮我查北京明天天气，并推荐一家安静的酒店",
                     "profile": "auto",
                 },
                 {
-                    "query": "订单号是 12345，我想咨询退货政策",
-                    "domain": "customer_service",
-                    "profile": "auto",
+                    "query": "规划杭州三日游，包含行程和美食",
+                    "domain": "travel",
+                    "profile": "workflow",
                 },
             ]
         }
@@ -235,7 +235,7 @@ def _resolve_domain(domain: Optional[str]) -> str:
             status_code=400,
             detail=(
                 "缺少 domain。可省略 domain 由平台自动推断，"
-                "或设置 DEFAULT_DOMAIN，或显式指定如 customer_service、travel。"
+                "或设置 DEFAULT_DOMAIN，或显式指定如 travel、demo。"
             ),
         )
     return resolved

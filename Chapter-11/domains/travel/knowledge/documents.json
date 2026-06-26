@@ -1,0 +1,22 @@
+{
+  "documents": [
+    {
+      "id": "travel-weather-rain",
+      "agent": "WeatherAgent",
+      "text": "如遇暴雨或极端天气，户外行程建议改期或改为室内活动；查询当地天气预报可提前规划。",
+      "tags": ["天气", "暴雨", "行程"]
+    },
+    {
+      "id": "travel-hotel-quiet",
+      "agent": "HotelAgent",
+      "text": "安静型酒店优先选择非主干道、高层且远离电梯井的房间；商务区周边通常噪音较大。",
+      "tags": ["酒店", "安静", "推荐"]
+    },
+    {
+      "id": "travel-flight-change",
+      "agent": "FlightAgent",
+      "text": "航班改签政策因航司与舱位而异，需在起飞前联系航空公司或出票平台办理。",
+      "tags": ["航班", "改签", "政策"]
+    }
+  ]
+}

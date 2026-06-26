@@ -16,6 +16,15 @@ VALID_SPLITS = ("train", "dev", "test", "all")
 
 
 @dataclass(frozen=True)
+class ToolDataCheck:
+    """Per-subtask structured assertion on tool/MCP payload (fixture + E2E scorer)."""
+
+    task_id: str
+    field_contains: Dict[str, List[str]]
+    forbid_error: bool = True
+
+
+@dataclass(frozen=True)
 class DecompositionExpect:
     min_subtasks: int = 1
     max_subtasks: int = 99
@@ -23,6 +32,7 @@ class DecompositionExpect:
     required_slot_groups: List[List[str]] = field(default_factory=list)
     forbidden_keywords: List[str] = field(default_factory=list)
     mappable_agents: List[str] = field(default_factory=list)
+    tool_checks: List[ToolDataCheck] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -97,6 +107,36 @@ def default_fixtures_path() -> Path:
     return DEFAULT_FIXTURES_PATH
 
 
+def _parse_tool_checks(raw: Any) -> List[ToolDataCheck]:
+    checks: List[ToolDataCheck] = []
+    if not isinstance(raw, list):
+        return checks
+    for idx, item in enumerate(raw):
+        if not isinstance(item, dict):
+            continue
+        task_id = str(item.get("task_id") or "").strip()
+        if not task_id:
+            raise ValueError(f"expect.tool_checks[{idx}] 缺少 task_id")
+        field_raw = item.get("field_contains") or {}
+        if not isinstance(field_raw, dict) or not field_raw:
+            raise ValueError(f"expect.tool_checks[{idx}] 缺少 field_contains")
+        field_contains: Dict[str, List[str]] = {}
+        for key, values in field_raw.items():
+            tokens = [str(token).strip() for token in (values or []) if str(token).strip()]
+            if tokens:
+                field_contains[str(key)] = tokens
+        if not field_contains:
+            raise ValueError(f"expect.tool_checks[{idx}].field_contains 不能为空")
+        checks.append(
+            ToolDataCheck(
+                task_id=task_id,
+                field_contains=field_contains,
+                forbid_error=bool(item.get("forbid_error", True)),
+            )
+        )
+    return checks
+
+
 def _parse_slot_groups(raw: Any) -> List[List[str]]:
     groups: List[List[str]] = []
     if not isinstance(raw, list):
@@ -123,6 +163,7 @@ def _parse_expect(raw: Dict[str, Any]) -> DecompositionExpect:
         required_slot_groups=slot_groups,
         forbidden_keywords=[str(item).strip() for item in raw.get("forbidden_keywords", []) if str(item).strip()],
         mappable_agents=[str(item).strip() for item in raw.get("mappable_agents", []) if str(item).strip()],
+        tool_checks=_parse_tool_checks(raw.get("tool_checks")),
     )
 
 

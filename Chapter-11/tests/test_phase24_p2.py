@@ -155,7 +155,7 @@ def test_product_readiness_check_script():
     import importlib.util
     import sys
 
-    path = Path(__file__).resolve().parent.parent / "scripts" / "product_readiness_check.py"
+    path = Path(__file__).resolve().parent.parent / "scripts" / "dev" / "product_readiness_check.py"
     spec = importlib.util.spec_from_file_location("product_readiness_check", path)
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

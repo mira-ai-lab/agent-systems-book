@@ -1,29 +1,20 @@
 # 内置领域定位
 
-`agent-platform` 通过 `domains/` 插件扩展业务能力。内置三个领域，**产品叙事**与**能力展示**分工如下。
+`agent-platform` 通过 `domains/` 插件扩展业务能力。当前内置两个领域：**travel** 为书稿与仓库内的完整示例，**demo** 为最小插件模板。
 
-## 默认产品域：customer_service
+## 主示例域：travel
 
 | 属性 | 值 |
 |------|-----|
-| 推荐场景 | 企业路由引擎默认 demo、HTTP `POST /v1/chat` 无 domain 时的回落推断 |
-| CLI | `python scripts/run_demo.py`（默认 `customer_service` + `profile=auto`） |
-| Agent | FAQAgent、TicketAgent |
+| 定位 | **书稿 / 完整参考实现**（Agent、benchmark、MCP、Prompt 进化） |
+| 推荐场景 | Fixed Graph 全链路、语义路由、多 Agent 行程规划、TextGrad 评测与优化 |
+| CLI 默认 | `python scripts/run_demo.py`（默认 `travel` + `profile=auto` + 多城市样例 query） |
+| Router 路径 | `python scripts/run_demo.py --domain travel --profile workflow --stream` |
+| legacy Fixed Graph | `python scripts/run_demo.py --legacy-graph --stream`（不经 RouterEngine） |
+| Agent | Weather / Hotel / Restaurant / Flight / Itinerary（5 个子 Agent） |
 | 编排 | `profile=auto` → 多 Agent 走 workflow，单 Agent 走 adaptive |
 
-**为何作为默认：** 话术短、依赖少、无需 MCP/A2A，新用户可在 5 分钟内跑通「只传 query」路径。
-
-## 能力展示域：travel
-
-| 属性 | 值 |
-|------|-----|
-| 定位 | **书稿 / 能力展示**，非默认产品叙事 |
-| 典型场景 | Fixed Graph 全链路、MCP 工具、A2A mixed 混部、多 Agent 行程规划 |
-| CLI | `python scripts/run_demo.py --domain travel --legacy-graph --stream`（书稿 Fixed Graph 直连） |
-| Router 路径 | `python scripts/run_demo.py --domain travel --profile workflow`（语义路由 + **travel 默认 `pre_survey_mode=full_ch2`**） |
-| Agent | Weather / Hotel / Restaurant / Flight / Itinerary（5 个子 Agent） |
-
-**说明：** `travel` 已是正式产品域（`recommended=true`），但在文档与 demo 中标注为「能力展示」，避免读者误以为必须部署旅行业务才能使用平台。
+扩展新业务域时，对照 `domains/travel/` 的能力边界与 [plugin_development.md](plugin_development.md)，或从 `demo` 骨架起步。
 
 ## 最小模板：demo
 
@@ -38,17 +29,21 @@
 ```python
 from agent_framework.bootstrap import route
 
-# 产品默认（推荐）
-await route("退货政策是什么？", domain="customer_service")
+# 书稿示例（推荐）
+await route(
+    "帮我查北京明天天气，并推荐一家三亚海棠湾附近的酒店",
+    domain="travel",
+    profile="workflow",
+)
 
-# 能力展示（Fixed Graph + 多 Agent）
-await route("规划北京三日游", domain="travel", profile="workflow")
+# profile=auto：多 Agent → workflow，单 Agent → adaptive
+await route("查 7 月 5 日广州飞北京的航班", domain="travel")
 
-# 仅 query，跨域 LLM 推断
-await route("我要咨询退货政策")
+# 仅 query：由 Router 跨域 LLM 推断（需配置 DASHSCOPE_API_KEY）
+await route("规划杭州三日游")
 ```
 
-HTTP 同等：`POST /v1/chat` 的 `domain` 可省略；`GET /v1/domains` 返回各域 `recommended_profile=auto`。
+HTTP 同等：`POST /v1/chat` 的 `domain` 可省略（走 `DEFAULT_DOMAIN` 环境变量或 LLM 推断）；`GET /v1/domains` 返回各域 `recommended_profile` 等元数据。
 
 ## 相关文档
 

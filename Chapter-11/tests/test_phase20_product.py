@@ -1,4 +1,4 @@
-"""Phase 20：SSE + Router stage events + FixedGraph 节点进度。"""
+﻿"""Phase 20：SSE + Router stage events + FixedGraph 节点进度。"""
 
 import asyncio
 import json
@@ -140,7 +140,7 @@ def test_router_orchestrator_stream_composes_router_and_graph():
     orch = RouterOrchestrator(
         mock_llm,
         plugin,
-        domain="customer_service",
+        domain="travel",
         enable_memory=False,
         entry_profile="workflow",
     )
@@ -151,8 +151,11 @@ def test_router_orchestrator_stream_composes_router_and_graph():
     with patch(
         "agent_framework.orchestration.router_orchestrator.get_thread_stage_store",
         return_value=MagicMock(get_last_stage_summary=MagicMock(return_value="")),
+    ), patch(
+        "agent_framework.router.stages.semantic_routing.should_use_semantic_routing",
+        return_value=False,
     ):
-        events = asyncio.run(_collect_stream(orch, "退货政策"))
+        events = asyncio.run(_collect_stream(orch, "查北京明天天气"))
 
     types = [event["type"] for event in events]
     assert "router.extraction" in types

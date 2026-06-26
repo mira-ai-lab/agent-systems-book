@@ -23,4 +23,8 @@ def agent_system_prompt_variable(prompt_template: str, *, agent_name: str = "Fli
 
 def read_agent_system_prompt_value(prompt_var, *, agent_name: str = "FlightAgent") -> str:
     """从 Variable 读回并校验 prompt 模板。"""
-    return extract_agent_system_prompt(str(getattr(prompt_var, "value", prompt_var)), agent_name=agent_name)
+    return extract_agent_system_prompt(
+        str(getattr(prompt_var, "value", prompt_var)),
+        agent_name=agent_name,
+        repair_missing=True,
+    )

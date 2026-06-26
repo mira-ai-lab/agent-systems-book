@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from langchain_openai import ChatOpenAI
 
 from agent_framework.optimization.agent_prompt_store import optimized_agent_prompts_path
 from agent_framework.optimization.agents.collect import collect_single_agent_failures
 from agent_framework.optimization.agents.evaluator import (
+    CaseEvalProgressCallback,
     create_agent_bridge,
     evaluate_single_agent_benchmark,
     evaluate_single_agent_case,
 )
+from agent_framework.optimization.agents.fixtures import SingleAgentCase
 from agent_framework.optimization.agents.fixtures import SingleAgentCaseFixtures, load_single_agent_cases
 from agent_framework.optimization.agents.runtime import (
     TRAVEL_OPTIMIZABLE_AGENTS,
@@ -41,6 +43,7 @@ async def optimize_agent_prompt_graph(
     train_split: str = "train",
     dev_split: str = "dev",
     system_prompt_template: Optional[str] = None,
+    on_case_evaluated: Optional[CaseEvalProgressCallback] = None,
 ) -> OptimizationResult:
     """优化指定子 Agent 的 system_prompt（单节点 graph，生产 LangGraph 不改动）。"""
     if agent_name not in TRAVEL_OPTIMIZABLE_AGENTS:
@@ -62,6 +65,8 @@ async def optimize_agent_prompt_graph(
         agent_name=agent_name,
         split=dev_split,
         system_prompt_template=best_template,
+        phase="baseline_dev",
+        on_case_evaluated=on_case_evaluated,
     )
     best_dev_score = baseline_report.average_score
     steps: List[OptimizationStepRecord] = []
@@ -72,6 +77,7 @@ async def optimize_agent_prompt_graph(
             train_cases,
             system_prompt_template=best_template,
             failure_threshold=failure_threshold,
+            on_case_evaluated=on_case_evaluated,
         )
 
         train_scores = []
@@ -80,6 +86,8 @@ async def optimize_agent_prompt_graph(
                 bridge,
                 case,
                 system_prompt_template=best_template,
+                phase="train_score",
+                on_case_evaluated=on_case_evaluated,
             )
             train_scores.append(item.score.total)
         train_average = sum(train_scores) / len(train_scores) if train_scores else 0.0
@@ -107,11 +115,23 @@ async def optimize_agent_prompt_graph(
             optimizer_llm=optimizer_llm,
         )
         failure_cases = [case for _, case in failures]
+        on_forward_case: Optional[Callable[[SingleAgentCase], None]] = None
+        if on_case_evaluated is not None:
+
+            def on_forward_case(case: SingleAgentCase) -> None:
+                print(
+                    f"[{agent_name}] textgrad_forward {case.case_id} (step={step})",
+                    flush=True,
+                )
+
         run_single_agent_graph_step(
             graph,
             failure_cases,
             constraints=constraints,
+            on_forward_case=on_forward_case,
         )
+        if on_case_evaluated is not None:
+            print(f"[{agent_name}] textgrad_step step={step} updating prompt", flush=True)
         candidate_template = graph.read_optimized_prompt_template()
 
         candidate_report = await evaluate_single_agent_benchmark(
@@ -120,6 +140,8 @@ async def optimize_agent_prompt_graph(
             agent_name=agent_name,
             split=dev_split,
             system_prompt_template=candidate_template,
+            phase="candidate_dev",
+            on_case_evaluated=on_case_evaluated,
         )
         candidate_dev = candidate_report.average_score
         accepted = should_accept_candidate(candidate_dev, best_dev_score, rollback=rollback)
@@ -164,6 +186,7 @@ async def optimize_flight_agent_prompt_graph(
     train_split: str = "train",
     dev_split: str = "dev",
     system_prompt_template: Optional[str] = None,
+    on_case_evaluated: Optional[CaseEvalProgressCallback] = None,
 ) -> OptimizationResult:
     """B1 兼容：优化 FlightAgent system_prompt。"""
     return await optimize_agent_prompt_graph(
@@ -177,6 +200,7 @@ async def optimize_flight_agent_prompt_graph(
         train_split=train_split,
         dev_split=dev_split,
         system_prompt_template=system_prompt_template,
+        on_case_evaluated=on_case_evaluated,
     )
 
 

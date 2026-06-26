@@ -16,10 +16,19 @@ def test_single_agent_fixtures_train_dev_split():
     fixtures = load_single_agent_cases()
     train = fixtures.cases_for_split("train", agent_name="FlightAgent")
     dev = fixtures.cases_for_split("dev", agent_name="FlightAgent")
-    assert len(train) == 1
-    assert len(dev) == 1
+    assert len(train) == 3
+    assert len(dev) == 2
     assert train[0].case_id == "flight-beijing-sanya-jun25"
-    assert dev[0].case_id == "flight-shanghai-chengdu-jun20"
+    assert dev[0].case_id == "flight-shanghai-chengdu-jun30"
+    assert {c.case_id for c in train} == {
+        "flight-beijing-sanya-jun25",
+        "flight-guangzhou-beijing-jul05",
+        "flight-shenzhen-hangzhou-jul10",
+    }
+    assert {c.case_id for c in dev} == {
+        "flight-shanghai-chengdu-jun30",
+        "flight-chengdu-xian-jul15",
+    }
 
 
 def test_score_single_agent_run_pass():

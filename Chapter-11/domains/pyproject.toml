@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-platform-domains-builtin"
 version = "0.7.0"
-description = "Built-in domain plugins for agent-platform (travel example, customer_service, demo)"
+description = "Built-in domain plugins for agent-platform (travel example, demo)"
 requires-python = ">=3.10"
 dependencies = [
     "agent-platform>=0.6.0",
@@ -13,12 +13,10 @@ dependencies = [
 
 [project.optional-dependencies]
 travel = []
-customer_service = []
 all = []
 
 [project.entry-points."agent_platform.domains"]
 travel = "domains.travel.plugin:TRAVEL_PLUGIN"
-customer_service = "domains.customer_service.plugin:CUSTOMER_SERVICE_PLUGIN"
 demo = "domains.demo.plugin:DEMO_PLUGIN"
 
 [tool.setuptools.package-dir]
@@ -26,9 +24,8 @@ demo = "domains.demo.plugin:DEMO_PLUGIN"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["travel*", "customer_service*", "demo*"]
+include = ["travel*", "demo*"]
 
 [tool.setuptools.package-data]
 "domains.travel" = ["locales/*.json", "knowledge/*.json"]
-"domains.customer_service" = ["locales/*.json", "knowledge/*.json"]
 "domains.demo" = ["locales/*.json"]

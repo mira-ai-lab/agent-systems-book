@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-import json
 from typing import List
 
 from agent_framework.optimization.decomposition.fixtures import DecompositionBenchmarkCase
-from agent_framework.optimization.e2e.expectations import resolve_e2e_expect
+from agent_framework.optimization.e2e.rules import build_e2e_expectation_label
 
 E2E_GRAPH_EVAL_INSTRUCTION = """You evaluate a full travel orchestration run against end-to-end benchmark expectations.
 
 The run includes routing, sub-agent execution, and final_response aggregation.
 Compare the actual orchestration output with the expected specification.
-Identify gaps in invoked agents, completed subtasks, and final response content.
+The label includes a rule_scorer_checklist that matches dev rollback scoring — prioritize fixing
+rule_scorer_failures_on_this_run when present.
+Identify gaps in invoked agents, completed subtasks, and response content (final_response and subtask summaries).
 Be specific so planner prompt improvements can fix similar failures.
 """
 
@@ -21,27 +22,14 @@ E2E_GRAPH_ROLE_DESCRIPTIONS = [
     "e2e benchmark expectation specification",
 ]
 
-
-def build_e2e_expectation_label(case: DecompositionBenchmarkCase) -> str:
-    """将 E2E 期望整理为 MultiFieldEvaluation 的 label 文本。"""
-    expect = resolve_e2e_expect(case)
-    lines = [
-        f"case_id: {case.case_id}",
-        f"query: {case.query}",
-        f"required_agents: {expect.required_agents}",
-        f"min_completed_subtasks: {expect.min_completed_subtasks}",
-        f"require_final_response: {expect.require_final_response}",
-    ]
-    if expect.required_response_keywords:
-        lines.append(f"required_response_keywords: {expect.required_response_keywords}")
-    if expect.required_response_slot_groups:
-        lines.append(
-            "required_response_slot_groups: "
-            + json.dumps(expect.required_response_slot_groups, ensure_ascii=False)
-        )
-    if expect.forbidden_response_keywords:
-        lines.append(f"forbidden_response_keywords: {expect.forbidden_response_keywords}")
-    return "\n".join(lines)
+# Re-export for backward compatibility
+__all__ = [
+    "E2E_GRAPH_EVAL_INSTRUCTION",
+    "E2E_GRAPH_ROLE_DESCRIPTIONS",
+    "build_e2e_expectation_label",
+    "create_e2e_graph_loss_fn",
+    "format_e2e_failure_cases_for_log",
+]
 
 
 def create_e2e_graph_loss_fn(engine):

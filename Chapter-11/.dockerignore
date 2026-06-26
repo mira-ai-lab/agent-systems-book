@@ -8,7 +8,7 @@ __pycache__/
 # 运行时数据
 chroma_memory/
 traces/
-log/
+logs/
 data/
 *.db
 *.db-shm

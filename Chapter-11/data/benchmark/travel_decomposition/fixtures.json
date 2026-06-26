@@ -55,6 +55,14 @@
         ],
         "mappable_agents": [
           "WeatherAgent"
+        ],
+        "tool_checks": [
+          {
+            "task_id": "T1",
+            "field_contains": {
+              "city": ["北京"]
+            }
+          }
         ]
       },
       "routing_input": {
@@ -163,6 +171,14 @@
         ],
         "mappable_agents": [
           "HotelAgent"
+        ],
+        "tool_checks": [
+          {
+            "task_id": "T1",
+            "field_contains": {
+              "city": ["杭州"]
+            }
+          }
         ]
       },
       "routing_input": {

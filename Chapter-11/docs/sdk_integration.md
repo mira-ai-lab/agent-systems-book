@@ -1,4 +1,4 @@
-# SDK 本地联调指南（Phase 26.6）
+﻿# SDK 本地联调指南（Phase 26.6）
 
 三步跑通 **Platform API → router-client → Demo Web**，验证同步 `route()`、SSE `routeStream()` 与异步 `submitJob()`。
 
@@ -80,8 +80,8 @@ npm run dev
 | 项 | 说明 |
 |----|------|
 | API Base URL | **留空**（Vite dev 将 `/v1/*` 代理到 `:8780`） |
-| Query | 如 `退货政策是什么？` |
-| Domain | 默认 `customer_service` |
+| Query | 如 `规划杭州三日游` |
+| Domain | 默认 `travel`（CLI）；API 可省略由 DEFAULT_DOMAIN 或 LLM 推断 |
 | SSE 流式 | 勾选后左侧显示 Router 阶段时间线 |
 
 生产构建直连 API：
@@ -109,7 +109,7 @@ import { createRouterClient } from "@agent-platform/router-client";
 
 const client = createRouterClient({ baseUrl: "http://127.0.0.1:8780" });
 
-const chat = await client.route("退货政策是什么？", { domain: "customer_service" });
+const chat = await client.route("规划杭州三日游", { domain: "travel" });
 console.log(chat.final_response);
 
 const job = await client.submitJob("规划上海苏州杭州七日游", { domain: "travel" });
@@ -130,7 +130,7 @@ GitHub Actions `chapter8-upgrade-ci.yml` 包含：
 本地等效：
 
 ```bash
-python scripts/sync_package_versions.py --check
+python scripts/dev/sync_package_versions.py --check
 pytest -q
 cd packages/router-client && npm test
 cd packages/demo-web && npm run build
@@ -153,15 +153,15 @@ cd packages/demo-web && npm run build
 校验：
 
 ```bash
-python scripts/sync_package_versions.py --check
+python scripts/dev/sync_package_versions.py --check
 ```
 
 发版 bump（以 `pyproject.toml` 为准对齐 npm 包，或指定版本）：
 
 ```bash
-python scripts/sync_package_versions.py --sync 0.22.0
+python scripts/dev/sync_package_versions.py --sync 0.22.0
 # 或仅对齐到 pyproject 当前值：
-python scripts/sync_package_versions.py --sync
+python scripts/dev/sync_package_versions.py --sync
 ```
 
 改版本后建议在 `packages/router-client` 与 `packages/demo-web` 执行 `npm install` 刷新 lockfile。

@@ -28,7 +28,7 @@ def _normalize_domain(domain: Optional[str]) -> str:
     name = (domain or DEFAULT_DOMAIN or "").strip()
     if not name:
         raise ValueError(
-            "domain 不能为空。请指定已注册领域，例如 customer_service、demo、travel。"
+            "domain 不能为空。请指定已注册领域，例如 travel、demo。"
             "可通过 GET /v1/domains 查看列表。"
         )
     return name

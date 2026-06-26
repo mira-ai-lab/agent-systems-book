@@ -1,4 +1,4 @@
-"""Phase 25 P2：KB Embedding 召回评测（25.9–25.10）。"""
+﻿"""Phase 25 P2：KB Embedding 召回评测（25.9–25.10）。"""
 
 import importlib.util
 import json
@@ -15,6 +15,7 @@ from agent_framework.router.kb.benchmark import (
     load_benchmark_fixtures,
 )
 from agent_framework.router.kb.loader import reset_domain_knowledge_cache
+from agent_framework.router.kb.repository import ingest_domain_knowledge
 
 
 @pytest.fixture(autouse=True)
@@ -29,12 +30,13 @@ def kb_tmp_path(tmp_path, monkeypatch):
     import agent_framework.router.kb.repository as repo
 
     monkeypatch.setattr(repo, "KNOWLEDGE_DIR", tmp_path)
+    ingest_domain_knowledge("travel", embedding_backend="hashing")
     return tmp_path
 
 
 def test_load_benchmark_fixtures():
     domain, cases = load_benchmark_fixtures()
-    assert domain == "customer_service"
+    assert domain == "travel"
     assert len(cases) >= 5
     assert cases[0].query
 
@@ -43,34 +45,34 @@ def test_case_hit_by_doc_id():
     case = RecallBenchmarkCase(
         case_id="x",
         query="q",
-        expected_agent="FAQAgent",
-        expected_doc_id="cs-return-policy",
+        expected_agent="WeatherAgent",
+        expected_doc_id="travel-weather-rain",
     )
     matches = [
-        {"name": "TicketAgent", "doc_id": "other", "normalized_score": 0.9},
-        {"name": "FAQAgent", "doc_id": "cs-return-policy", "normalized_score": 0.8},
+        {"name": "HotelAgent", "doc_id": "other", "normalized_score": 0.9},
+        {"name": "WeatherAgent", "doc_id": "travel-weather-rain", "normalized_score": 0.8},
     ]
     hit, rank, top = _case_hit(case, matches, top_k=3)
     assert hit is True
     assert rank == 2
-    assert top["doc_id"] == "cs-return-policy"
+    assert top["doc_id"] == "travel-weather-rain"
 
 
 def test_evaluate_backend_recall_hashing(kb_tmp_path):
     report = evaluate_backend_recall(
-        "customer_service",
+        "travel",
         [
             RecallBenchmarkCase(
-                case_id="return",
-                query="退换货政策",
-                expected_agent="FAQAgent",
-                expected_doc_id="cs-return-policy",
+                case_id="weather",
+                query="暴雨天气户外行程",
+                expected_agent="WeatherAgent",
+                expected_doc_id="travel-weather-rain",
             ),
             RecallBenchmarkCase(
-                case_id="ticket",
-                query="提交工单投诉",
-                expected_agent="TicketAgent",
-                expected_doc_id="cs-ticket-escalation",
+                case_id="hotel",
+                query="推荐安静的酒店房间",
+                expected_agent="HotelAgent",
+                expected_doc_id="travel-hotel-quiet",
             ),
         ],
         embedding_backend="hashing",
@@ -85,18 +87,18 @@ def test_evaluate_backend_recall_hashing(kb_tmp_path):
 
 def test_compare_backend_recall_report_shape(kb_tmp_path):
     report = compare_backend_recall(
-        "customer_service",
+        "travel",
         [
             RecallBenchmarkCase(
-                case_id="return",
-                query="7天无理由退货",
-                expected_doc_id="cs-return-policy",
+                case_id="weather",
+                query="查天气预报改行程",
+                expected_doc_id="travel-weather-rain",
             )
         ],
         backends=["hashing"],
         top_k_values=[1, 3],
     )
-    assert report["domain"] == "customer_service"
+    assert report["domain"] == "travel"
     assert "hashing" in report["backends"]
     assert "hit@1" in report["backends"]["hashing"]["hit_at_k"]
     case = report["backends"]["hashing"]["cases"][0]
@@ -111,12 +113,12 @@ def test_benchmark_script_json_output(kb_tmp_path, tmp_path, monkeypatch):
     fixtures.write_text(
         json.dumps(
             {
-                "domain": "customer_service",
+                "domain": "travel",
                 "cases": [
                     {
-                        "id": "return",
-                        "query": "退换货政策",
-                        "expected_doc_id": "cs-return-policy",
+                        "id": "weather",
+                        "query": "暴雨天气户外行程",
+                        "expected_doc_id": "travel-weather-rain",
                     }
                 ],
             },
@@ -124,7 +126,9 @@ def test_benchmark_script_json_output(kb_tmp_path, tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    script_path = Path(__file__).resolve().parent.parent / "scripts" / "benchmark_knowledge_recall.py"
+    script_path = (
+        Path(__file__).resolve().parent.parent / "scripts" / "dev" / "benchmark_knowledge_recall.py"
+    )
     spec = importlib.util.spec_from_file_location("benchmark_knowledge_recall", script_path)
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

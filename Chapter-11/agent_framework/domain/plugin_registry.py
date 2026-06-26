@@ -23,7 +23,7 @@ def get_domain_plugin(name: str) -> DomainPlugin:
         available = ", ".join(sorted(_plugins)) or "(none)"
         raise KeyError(
             f"未知领域 '{name}'，已注册: {available}。"
-            " 请执行: pip install -e domains/ 或在仓库根目录运行 scripts/install_dev.ps1"
+            " 请执行: pip install -e domains/ 或在仓库根目录运行 scripts/dev/install_dev.ps1"
         )
     return _plugins[key]
 

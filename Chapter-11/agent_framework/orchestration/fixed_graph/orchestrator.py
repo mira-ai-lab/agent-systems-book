@@ -116,7 +116,7 @@ class LangGraphOrchestrator:
                 )
             if not self.domain:
                 raise ValueError(
-                    "缺少领域配置：请传入 domain='customer_service' 等已注册领域，"
+                    "缺少领域配置：请传入 domain='travel' 等已注册领域，"
                     "或 travel（书稿示例）。"
                     "推荐：agent_framework.bootstrap.platform.create_orchestrator(domain)"
                 )

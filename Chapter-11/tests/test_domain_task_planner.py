@@ -30,7 +30,7 @@ def _mock_llm(responses: list[str]) -> MagicMock:
 @pytest.fixture
 def planner() -> TaskPlanner:
     registry = create_travel_registry_stub()
-    prompts = TravelPrompts.build()
+    prompts = TravelPrompts.build(use_optimized=False)
     domain_config = DomainConfig(enable_guess_agent=True)
     llm = _mock_llm([])
     return TaskPlanner(llm, registry, prompts, domain_config)

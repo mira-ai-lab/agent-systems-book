@@ -1,4 +1,4 @@
-"""Phase 19：README 产品化 + workflow 与 Router 完全合一。"""
+﻿"""Phase 19：README 产品化 + workflow 与 Router 完全合一。"""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -29,7 +29,7 @@ def test_create_runtime_workflow_returns_router_orchestrator(monkeypatch):
         "agent_framework.orchestration.router_orchestrator.load_project_dotenv",
         lambda: None,
     )
-    runtime = create_runtime("customer_service", profile="workflow", llm=mock_llm)
+    runtime = create_runtime("travel", profile="workflow", llm=mock_llm)
     assert isinstance(runtime, RouterOrchestrator)
     assert runtime.entry_profile == PROFILE_WORKFLOW
 
@@ -44,7 +44,7 @@ def test_create_orchestrator_is_router_workflow_alias(monkeypatch):
         "agent_framework.orchestration.router_orchestrator.load_project_dotenv",
         lambda: None,
     )
-    orch = create_orchestrator("customer_service", llm=mock_llm)
+    orch = create_orchestrator("travel", llm=mock_llm)
     assert isinstance(orch, RouterOrchestrator)
     assert orch.entry_profile == PROFILE_WORKFLOW
 
@@ -120,7 +120,7 @@ def test_router_workflow_always_prefills_execution_plan():
     orch = RouterOrchestrator(
         mock_llm,
         plugin,
-        domain="customer_service",
+        domain="travel",
         enable_memory=False,
         entry_profile=PROFILE_WORKFLOW,
     )
@@ -131,8 +131,11 @@ def test_router_workflow_always_prefills_execution_plan():
     with patch(
         "agent_framework.orchestration.router_orchestrator.get_thread_stage_store",
         return_value=MagicMock(get_last_stage_summary=MagicMock(return_value="")),
+    ), patch(
+        "agent_framework.router.stages.semantic_routing.should_use_semantic_routing",
+        return_value=False,
     ):
-        result = asyncio.run(orch.process_request("退货政策是什么？", thread_id="t1"))
+        result = asyncio.run(orch.process_request("查北京明天天气", thread_id="t1"))
 
     kwargs = workflow.process_request.await_args.kwargs
     assert "prefilled_execution_plan" in kwargs

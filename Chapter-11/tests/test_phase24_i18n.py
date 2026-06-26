@@ -1,4 +1,4 @@
-"""Phase 24 P1 i18n：子 Agent locales + 缺失告警 + API locale 端到端。"""
+﻿"""Phase 24 P1 i18n：子 Agent locales + 缺失告警 + API locale 端到端。"""
 
 import warnings
 from unittest.mock import patch
@@ -12,7 +12,6 @@ from agent_framework.domain.locale_loader import (
     reset_locale_loader_cache,
 )
 from agent_framework.i18n.agent_locale_context import agent_locale_context, get_agent_locale
-from domains.customer_service.prompt_bundle import CustomerServicePrompts
 from domains.demo.prompt_bundle import DemoPrompts
 from domains.travel.agents.prompt_loader import travel_agent_prompt
 from domains.travel.prompt_bundle import TravelPrompts
@@ -25,10 +24,7 @@ def _clear_locale_cache():
     reset_locale_loader_cache()
 
 
-@pytest.mark.parametrize(
-    "domain",
-    ["travel", "customer_service", "demo"],
-)
+@pytest.mark.parametrize("domain", ["travel", "demo"])
 def test_domain_prompts_zh_en_differ(domain: str):
     zh = domain_prompts_from_locale(domain, "zh")
     en = domain_prompts_from_locale(domain, "en")
@@ -44,13 +40,6 @@ def test_travel_agent_prompts_zh_en_differ():
     assert "weather" in en.lower()
 
 
-def test_customer_service_agent_prompts_zh_en_differ():
-    zh = agent_system_prompt("customer_service", "FAQAgent", "zh")
-    en = agent_system_prompt("customer_service", "FAQAgent", "en")
-    assert "FAQ" in zh
-    assert "English" in en or "english" in en.lower() or "concisely" in en.lower()
-
-
 @pytest.mark.parametrize(
     "agent_name",
     ["WeatherAgent", "HotelAgent", "RestaurantAgent", "FlightAgent", "ItineraryAgent"],
@@ -59,12 +48,6 @@ def test_travel_five_agents_have_en_locale(agent_name: str):
     prompt = agent_system_prompt("travel", agent_name, "en")
     assert prompt.strip()
     assert "Agent" in prompt or "assistant" in prompt.lower()
-
-
-def test_customer_service_two_agents_have_en_locale():
-    for name in ("FAQAgent", "TicketAgent"):
-        prompt = agent_system_prompt("customer_service", name, "en")
-        assert "You are" in prompt
 
 
 def test_locale_missing_keys_logs_and_falls_back_to_zh():
@@ -88,10 +71,6 @@ def test_locale_missing_keys_logs_and_falls_back_to_zh():
 
 
 def test_prompt_bundles_use_locale_json():
-    cs_zh = CustomerServicePrompts.build("zh")
-    cs_en = CustomerServicePrompts.build("en")
-    assert cs_zh.multi_task_title != cs_en.multi_task_title
-
     tr_zh = TravelPrompts.build("zh")
     tr_en = TravelPrompts.build("en")
     assert tr_zh.multi_task_title != tr_en.multi_task_title

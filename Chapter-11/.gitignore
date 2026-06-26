@@ -12,5 +12,6 @@ packages/router-client/dist/
 packages/demo-web/node_modules/
 packages/demo-web/dist/
 traces/
+logs/
 *.sqlite3
 .env

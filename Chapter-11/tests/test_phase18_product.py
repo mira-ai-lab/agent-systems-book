@@ -1,4 +1,4 @@
-"""Phase 18：API locale + router pre_survey 联动 + 领域 prompt 英文化。"""
+﻿"""Phase 18：API locale + router pre_survey 联动 + 领域 prompt 英文化。"""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
@@ -11,7 +11,6 @@ from agent_framework.orchestration.fixed_graph.state import CentralAgentState
 from agent_framework.router.execution_plan_bridge import execution_plan_from_routing_plan
 from agent_framework.router.plan import AgentCandidate, RoutingPlan, RoutingStep
 from agent_framework.router.pre_survey_bridge import pre_survey_from_routing_plan
-from domains.customer_service.prompt_bundle import CustomerServicePrompts
 from domains.travel.prompt_bundle import TravelPrompts
 
 
@@ -81,12 +80,6 @@ def test_pre_survey_node_skips_llm_with_prefilled():
     result = asyncio.run(nodes["pre_survey"](state))
     ctx.planner.run_pre_survey.assert_not_called()
     assert result["pre_survey"]["source"] == "router_engine"
-
-
-def test_customer_service_prompts_en():
-    prompts = CustomerServicePrompts.build(locale="en")
-    assert "customer-service orchestration hub" in prompts.central_agent_system.lower()
-    assert prompts.multi_task_title == "Customer Service Summary"
 
 
 def test_travel_prompts_en():

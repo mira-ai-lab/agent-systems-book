@@ -8,8 +8,12 @@ from typing import Dict, List, Optional
 
 from langchain_openai import ChatOpenAI
 
+from agent_framework.optimization.agents.evaluator import CaseEvalProgressCallback, make_case_eval_progress_printer
 from agent_framework.optimization.agents.fixtures import SingleAgentCaseFixtures
-from agent_framework.optimization.agents.runtime import TRAVEL_OPTIMIZABLE_AGENTS
+from agent_framework.optimization.agents.runtime import (
+    TRAVEL_OPTIMIZABLE_AGENTS,
+    resolve_optimization_start_template,
+)
 from agent_framework.optimization.core.result import OptimizationResult
 from agent_framework.optimization.optimizers.textgrad_agent.optimize import optimize_agent_prompt_graph
 
@@ -55,8 +59,18 @@ async def _optimize_one_agent(
     rollback: bool,
     train_split: str,
     dev_split: str,
+    verbose: bool = False,
+    start_from_locales: bool = False,
 ) -> tuple[str, OptimizationResult]:
     """单 Agent 优化任务（供 gather 或顺序循环调用）。"""
+    on_case_evaluated: CaseEvalProgressCallback | None = None
+    if verbose:
+        on_case_evaluated = make_case_eval_progress_printer(agent_name)
+    start_template = resolve_optimization_start_template(
+        agent_name,
+        locale=fixtures.locale,
+        start_from_locales=start_from_locales,
+    )
     result = await optimize_agent_prompt_graph(
         agent_name=agent_name,
         executor_llm=executor_llm,
@@ -67,6 +81,8 @@ async def _optimize_one_agent(
         rollback=rollback,
         train_split=train_split,
         dev_split=dev_split,
+        system_prompt_template=start_template,
+        on_case_evaluated=on_case_evaluated,
     )
     return agent_name, result
 
@@ -83,6 +99,8 @@ async def run_agent_optimization(
     train_split: str = "train",
     dev_split: str = "dev",
     parallel: bool = True,
+    verbose: bool = False,
+    start_from_locales: bool = False,
 ) -> AgentOptimizationOutput:
     """Agent-B2：对多个子 Agent 做 system_prompt 优化。
 
@@ -101,6 +119,8 @@ async def run_agent_optimization(
         rollback=rollback,
         train_split=train_split,
         dev_split=dev_split,
+        verbose=verbose,
+        start_from_locales=start_from_locales,
     )
 
     results: Dict[str, OptimizationResult] = {}

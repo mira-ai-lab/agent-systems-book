@@ -260,7 +260,7 @@ def single_agent_fixtures():
 def test_load_single_agent_cases(single_agent_fixtures):
     """JSON 结构正确，且 Flight 样例可读。"""
     assert single_agent_fixtures.locale == "zh"
-    assert len(single_agent_fixtures.cases) == 10
+    assert len(single_agent_fixtures.cases) == 13
     flight_cases = single_agent_fixtures.cases_for_agent("FlightAgent")
     assert flight_cases[0].case_id == "flight-beijing-sanya-jun25"
     assert "北京飞三亚" in flight_cases[0].user_query or "北京" in flight_cases[0].user_query
@@ -285,7 +285,10 @@ def test_registry_covers_all_single_agent_cases(single_agent_fixtures):
     "case_id",
     [
         "flight-beijing-sanya-jun25",
-        "flight-shanghai-chengdu-jun20",
+        "flight-shanghai-chengdu-jun30",
+        "flight-guangzhou-beijing-jul05",
+        "flight-shenzhen-hangzhou-jul10",
+        "flight-chengdu-xian-jul15",
         "weather-beijing-tomorrow",
         "weather-xian-forecast-7d",
         "hotel-sanya-haitang",

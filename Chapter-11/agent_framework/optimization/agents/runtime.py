@@ -13,9 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_openai import ChatOpenAI
 
-from agent_framework.domain.locale_loader import agent_fragment, agent_system_prompt
+from agent_framework.domain.locale_loader import agent_system_prompt
 from agent_framework.infra.agent_runtime import build_agent
-from domains.travel.plan_context import build_time_anchor, format_time_anchor_block
 
 from .scorer import extract_ai_text, extract_invoked_tool_names
 
@@ -49,27 +48,30 @@ def get_agent_prompt_template(agent_name: str, *, locale: str = "zh") -> str:
 
 def render_agent_prompt_template(template: str, *, locale: str = "zh") -> str:
     """将模板渲染为可传给 build_agent 的最终 system_prompt。"""
-    from datetime import datetime
+    from domains.travel.agents.prompt_fragments import render_travel_agent_prompt_template
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    try:
-        time_rules = agent_fragment("travel", "time_anchor_rules", locale)
-    except KeyError:
-        time_rules = ""
-    try:
-        multi_rules = agent_fragment("travel", "multi_entity_rules", locale)
-    except KeyError:
-        multi_rules = ""
-    time_anchor = format_time_anchor_block(build_time_anchor())
-    return template.format(
-        today=today,
-        time_anchor=time_anchor,
-        time_anchor_rules=time_rules.format(time_anchor=time_anchor) if "{time_anchor}" in time_rules else time_rules,
-        multi_entity_rules=multi_rules,
-    )
+    return render_travel_agent_prompt_template(template, locale=locale)
 
 
-def extract_agent_system_prompt(raw_text: str, *, agent_name: str = "FlightAgent") -> str:
+def repair_agent_system_prompt_placeholders(text: str, *, agent_name: str) -> str:
+    """若 optimizer 删掉关键占位符，按 locales 惯例补回（避免 render 失败）。"""
+    required = AGENT_REQUIRED_PLACEHOLDERS.get(agent_name, ())
+    repaired = text
+    if "{today}" in required and "{today}" not in repaired:
+        repaired = f"当前日期（本地时间）：{{today}}\n\n{repaired}"
+    if "{time_anchor_rules}" in required and "{time_anchor_rules}" not in repaired:
+        repaired = repaired.rstrip() + "\n{time_anchor_rules}\n"
+    if "{multi_entity_rules}" in required and "{multi_entity_rules}" not in repaired:
+        repaired = repaired.rstrip() + "\n{multi_entity_rules}\n"
+    return repaired
+
+
+def extract_agent_system_prompt(
+    raw_text: str,
+    *,
+    agent_name: str = "FlightAgent",
+    repair_missing: bool = False,
+) -> str:
     """清洗 optimizer 输出，并校验该 Agent 的关键占位符。"""
     text = (raw_text or "").strip()
     if not text:
@@ -78,6 +80,9 @@ def extract_agent_system_prompt(raw_text: str, *, agent_name: str = "FlightAgent
     fenced = re.search(r"```(?:markdown|text|prompt)?\s*([\s\S]*?)```", text)
     if fenced:
         text = fenced.group(1).strip()
+
+    if repair_missing:
+        text = repair_agent_system_prompt_placeholders(text, agent_name=agent_name)
 
     required = AGENT_REQUIRED_PLACEHOLDERS.get(agent_name, ())
     missing = [token for token in required if token not in text]
@@ -134,7 +139,11 @@ def build_flight_agent(
 
 
 def default_agent_prompt_template(agent_name: str, *, locale: str = "zh") -> str:
-    """默认 Agent 模板（优先 optimized override，否则 locales）。"""
+    """默认 Agent 模板（优先 optimized override，否则 locales）。
+
+    破坏实验用的 FlightAgent prompt 写在
+    ``data/benchmark/travel_agents/optimized/{locale}.json``，不在代码里硬编码。
+    """
     if agent_name not in TRAVEL_OPTIMIZABLE_AGENTS:
         raise ValueError(f"不支持的 agent_name={agent_name!r}")
     from agent_framework.optimization.agent_prompt_store import load_optimized_agent_prompt_template
@@ -143,6 +152,22 @@ def default_agent_prompt_template(agent_name: str, *, locale: str = "zh") -> str
     if override:
         return override
     return get_agent_prompt_template(agent_name, locale=locale)
+
+
+def resolve_optimization_start_template(
+    agent_name: str,
+    *,
+    locale: str = "zh",
+    start_from_locales: bool = False,
+) -> str:
+    """解析优化循环的起始 system_prompt 模板。
+
+    - ``start_from_locales=False``（默认）：优先 ``optimized`` 覆盖，与 ``eval`` 一致。
+    - ``start_from_locales=True``：始终用 ``locales`` 基线（忽略 optimized 破坏版）。
+    """
+    if start_from_locales:
+        return get_agent_prompt_template(agent_name, locale=locale)
+    return default_agent_prompt_template(agent_name, locale=locale)
 
 
 def default_flight_prompt_template(*, locale: str = "zh") -> str:

@@ -24,3 +24,37 @@ def agent_time_anchor_block() -> str:
     return AGENT_TIME_ANCHOR_RULES.format(
         time_anchor=format_time_anchor_block(build_time_anchor()),
     )
+
+
+def render_travel_agent_prompt_template(template: str, *, locale: str = "zh") -> str:
+    """将 Agent system_prompt 模板中的已知占位符替换为运行时值。
+
+    使用逐 token replace，避免 optimizer 产出含 JSON 花括号时触发 str.format KeyError。
+    """
+    from datetime import datetime
+
+    from agent_framework.domain.locale_loader import agent_fragment
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        time_rules = agent_fragment("travel", "time_anchor_rules", locale)
+    except KeyError:
+        time_rules = ""
+    try:
+        multi_rules = agent_fragment("travel", "multi_entity_rules", locale)
+    except KeyError:
+        multi_rules = ""
+    time_anchor = format_time_anchor_block(build_time_anchor())
+    if "{time_anchor}" in time_rules:
+        time_rules = time_rules.replace("{time_anchor}", time_anchor)
+
+    values = {
+        "today": today,
+        "time_anchor": time_anchor,
+        "time_anchor_rules": time_rules,
+        "multi_entity_rules": multi_rules,
+    }
+    rendered = template
+    for key, value in values.items():
+        rendered = rendered.replace("{" + key + "}", value)
+    return rendered

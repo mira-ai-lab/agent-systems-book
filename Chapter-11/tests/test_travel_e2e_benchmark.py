@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 from agent_framework.optimization.decomposition.fixtures import load_decomposition_fixtures
 from agent_framework.optimization.e2e.evaluator import evaluate_e2e_benchmark
 from agent_framework.optimization.e2e.expectations import resolve_e2e_expect
-from agent_framework.optimization.e2e.scorer import score_e2e_run
+from agent_framework.optimization.e2e.rules import build_e2e_expectation_label, format_e2e_rule_checklist
+from agent_framework.optimization.e2e.scorer import build_e2e_keyword_corpus, score_e2e_run
 
 
 def test_resolve_e2e_expect_from_weather_case():
@@ -18,6 +19,9 @@ def test_resolve_e2e_expect_from_weather_case():
     assert "北京" in expect.required_response_keywords
     assert "酒店" in expect.forbidden_response_keywords
     assert expect.min_completed_subtasks == 1
+    assert len(expect.tool_checks) == 1
+    assert expect.tool_checks[0].task_id == "T1"
+    assert "北京" in expect.tool_checks[0].field_contains["city"]
 
 
 def test_score_e2e_run_passes_for_complete_weather_flow():
@@ -53,6 +57,88 @@ def test_score_e2e_run_detects_missing_agent():
     )
     assert score.total < 0.8
     assert not score.agents_ok
+
+
+def test_score_e2e_run_keywords_in_agent_summary_only():
+    case = next(item for item in load_decomposition_fixtures().cases if item.case_id == "case-01")
+    expect = resolve_e2e_expect(case)
+    score = score_e2e_run(
+        {
+            "final_response": "查询完成，详见下方摘要。",
+            "subtask_results": {
+                "T1": {
+                    "agent": "WeatherAgent",
+                    "status": "completed",
+                    "agent_summary": "北京明天天气晴，适合出行。",
+                },
+            },
+        },
+        expect,
+    )
+    assert score.keyword_ok
+    assert score.total >= 0.8
+
+
+def test_build_e2e_keyword_corpus_merges_final_and_summaries():
+    corpus = build_e2e_keyword_corpus(
+        {
+            "final_response": "汇总如下",
+            "subtask_results": {
+                "T1": {"agent_summary": "上海航班"},
+            },
+        }
+    )
+    assert "汇总如下" in corpus
+    assert "上海航班" in corpus
+
+
+def test_build_e2e_expectation_label_includes_rule_failures():
+    case = next(item for item in load_decomposition_fixtures().cases if item.case_id == "case-01")
+    expect = resolve_e2e_expect(case)
+    label = build_e2e_expectation_label(
+        case,
+        rule_failures=["回复/子任务摘要缺少关键词: ['天气']"],
+    )
+    assert "rule_scorer_checklist" in label or "Rule scorer checklist" in label
+    assert "rule_scorer_failures_on_this_run" in label
+    assert "天气" in label
+    checklist = format_e2e_rule_checklist(expect)
+    assert "0.35" in checklist
+    assert "agent_summary" in checklist
+
+
+def test_score_e2e_run_tool_data_city_check():
+    case = next(item for item in load_decomposition_fixtures().cases if item.case_id == "case-01")
+    expect = resolve_e2e_expect(case)
+    good = score_e2e_run(
+        {
+            "final_response": "北京明天天气晴。",
+            "subtask_results": {
+                "T1": {
+                    "agent": "WeatherAgent",
+                    "status": "completed",
+                    "tool_data": {"city": "北京", "date": "2026-06-23"},
+                },
+            },
+        },
+        expect,
+    )
+    bad = score_e2e_run(
+        {
+            "final_response": "北京明天天气晴。",
+            "subtask_results": {
+                "T1": {
+                    "agent": "WeatherAgent",
+                    "status": "completed",
+                    "tool_data": {"city": "上海"},
+                },
+            },
+        },
+        expect,
+    )
+    assert good.tool_data_ok
+    assert not bad.tool_data_ok
+    assert bad.total < good.total
 
 
 def test_evaluate_e2e_benchmark_with_mock_orchestrator():

@@ -1,5 +1,24 @@
 {
   "locale": "zh",
+  "splits": {
+    "train": [
+      "flight-beijing-sanya-jun25",
+      "flight-guangzhou-beijing-jul05",
+      "flight-shenzhen-hangzhou-jul10",
+      "weather-beijing-tomorrow",
+      "hotel-sanya-haitang",
+      "restaurant-xian-local",
+      "itinerary-hangzhou-3d"
+    ],
+    "dev": [
+      "flight-shanghai-chengdu-jun30",
+      "flight-chengdu-xian-jul15",
+      "weather-xian-forecast-7d",
+      "hotel-xian-center",
+      "restaurant-hangzhou-west-lake",
+      "itinerary-shenzhen-hangzhou-5d"
+    ]
+  },
   "agents": {
     "FlightAgent": [
       {
@@ -14,15 +33,48 @@
         "response_keywords": ["北京", "三亚", "航班"]
       },
       {
-        "case_id": "flight-shanghai-chengdu-jun20",
-        "user_query": "查一下 6 月 20 日上海到成都的航班",
+        "case_id": "flight-shanghai-chengdu-jun30",
+        "user_query": "查一下 6 月 30 日上海到成都的航班",
         "tool": "search_flights",
         "tool_args": {
           "departure": "上海",
           "arrival": "成都",
-          "date": "2026-06-20"
+          "date": "2026-06-30"
         },
         "response_keywords": ["上海", "成都", "航班"]
+      },
+      {
+        "case_id": "flight-guangzhou-beijing-jul05",
+        "user_query": "查 7 月 5 日广州飞北京的航班",
+        "tool": "search_flights",
+        "tool_args": {
+          "departure": "广州",
+          "arrival": "北京",
+          "date": "2026-07-05"
+        },
+        "response_keywords": ["广州", "北京", "航班"]
+      },
+      {
+        "case_id": "flight-shenzhen-hangzhou-jul10",
+        "user_query": "帮我查 7 月 5 日深圳到杭州的机票",
+        "tool": "search_flights",
+        "tool_args": {
+          "departure": "深圳",
+          "arrival": "杭州",
+          "date": "2026-07-05"
+        },
+        "response_keywords": ["深圳", "杭州", "航班"]
+      },
+      {
+        "case_id": "flight-chengdu-xian-jul15",
+        "user_query": "查 7 月 5 日成都飞西安的航班信息",
+        "tool": "search_flights",
+        "tool_args": {
+          "departure": "成都",
+          "arrival": "西安",
+          "date": "2026-07-05"
+        },
+        "response_keywords": ["成都", "西安", "航班"]
       }
     ],
     "WeatherAgent": [

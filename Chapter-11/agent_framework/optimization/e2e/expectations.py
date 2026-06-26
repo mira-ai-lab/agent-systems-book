@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List
 
-from agent_framework.optimization.decomposition.fixtures import DecompositionBenchmarkCase
+from agent_framework.optimization.decomposition.fixtures import DecompositionBenchmarkCase, ToolDataCheck
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class E2eExpect:
     required_agents: List[str] = field(default_factory=list)
     min_completed_subtasks: int = 1
     require_final_response: bool = True
+    tool_checks: List[ToolDataCheck] = field(default_factory=list)
 
 
 def resolve_e2e_expect(case: DecompositionBenchmarkCase) -> E2eExpect:
@@ -41,4 +42,5 @@ def resolve_e2e_expect(case: DecompositionBenchmarkCase) -> E2eExpect:
         forbidden_response_keywords=list(case.expect.forbidden_keywords),
         required_agents=required_agents,
         min_completed_subtasks=max(1, min_completed),
+        tool_checks=list(case.expect.tool_checks),
     )

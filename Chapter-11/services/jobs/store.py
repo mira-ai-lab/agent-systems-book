@@ -37,7 +37,7 @@ class JobStore:
                 CREATE TABLE IF NOT EXISTS jobs (
                     job_id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
-                    domain TEXT NOT NULL DEFAULT 'customer_service',
+                    domain TEXT NOT NULL DEFAULT 'travel',
                     query TEXT NOT NULL,
                     thread_id TEXT NOT NULL,
                     status TEXT NOT NULL,
@@ -51,7 +51,7 @@ class JobStore:
             )
             cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
             if "domain" not in cols:
-                conn.execute("ALTER TABLE jobs ADD COLUMN domain TEXT NOT NULL DEFAULT 'customer_service'")
+                conn.execute("ALTER TABLE jobs ADD COLUMN domain TEXT NOT NULL DEFAULT 'travel'")
             if "mode" not in cols:
                 conn.execute(
                     "ALTER TABLE jobs ADD COLUMN mode TEXT NOT NULL DEFAULT 'fixed_graph'"
@@ -79,7 +79,7 @@ class JobStore:
     ) -> JobRecord:
         job_id = f"job-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
-        resolved_domain = (domain or "customer_service").strip() or "customer_service"
+        resolved_domain = (domain or "travel").strip() or "travel"
         resolved_mode = (mode or "fixed_graph").strip() or "fixed_graph"
         resolved_transport = (transport or "local").strip() or "local"
         resolved_locale = (locale or "zh").strip() or "zh"
@@ -182,7 +182,7 @@ class JobStore:
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> JobRecord:
         keys = set(row.keys())
-        domain = row["domain"] if "domain" in keys else "customer_service"
+        domain = row["domain"] if "domain" in keys else "travel"
         mode = row["mode"] if "mode" in keys else "fixed_graph"
         transport = row["transport"] if "transport" in keys else "local"
         locale = row["locale"] if "locale" in keys else "zh"

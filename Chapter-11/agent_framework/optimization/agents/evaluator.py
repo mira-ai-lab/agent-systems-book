@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
+
+CaseEvalProgressCallback = Callable[[str, "SingleAgentCaseResult"], None]
 
 from langchain_openai import ChatOpenAI
 
@@ -52,11 +54,27 @@ class SingleAgentBenchmarkReport:
         }
 
 
+def make_case_eval_progress_printer(agent_name: str) -> CaseEvalProgressCallback:
+    """构造 ``--verbose`` 时每条 case 评测完成后的打印回调。"""
+
+    def _on(phase: str, result: SingleAgentCaseResult) -> None:
+        tools = result.invoked_tools or ["(none)"]
+        print(
+            f"[{agent_name}] {phase} {result.case_id} "
+            f"score={result.score.total:.3f} tools={tools}",
+            flush=True,
+        )
+
+    return _on
+
+
 async def evaluate_single_agent_case(
     bridge: AgentSyncBridge,
     case: SingleAgentCase,
     *,
     system_prompt_template: str,
+    phase: str = "eval",
+    on_case_evaluated: Optional[CaseEvalProgressCallback] = None,
 ) -> SingleAgentCaseResult:
     """评测单条 case（bridge 内部 sync，外层保持 async 接口与 planner 优化器一致）。"""
     state = bridge.invoke(
@@ -67,7 +85,7 @@ async def evaluate_single_agent_case(
     score = score_single_agent_run(state, case)
     from .scorer import extract_ai_text, extract_invoked_tool_names
 
-    return SingleAgentCaseResult(
+    result = SingleAgentCaseResult(
         case_id=case.case_id,
         agent_name=case.agent_name,
         query=case.user_query,
@@ -75,6 +93,9 @@ async def evaluate_single_agent_case(
         raw_response=extract_ai_text(state),
         invoked_tools=extract_invoked_tool_names(state),
     )
+    if on_case_evaluated is not None:
+        on_case_evaluated(phase, result)
+    return result
 
 
 async def evaluate_single_agent_benchmark(
@@ -84,6 +105,8 @@ async def evaluate_single_agent_benchmark(
     agent_name: str = "FlightAgent",
     split: str = "dev",
     system_prompt_template: Optional[str] = None,
+    phase: str = "eval",
+    on_case_evaluated: Optional[CaseEvalProgressCallback] = None,
 ) -> SingleAgentBenchmarkReport:
     """批量评测某 Agent 在指定 split 上的平均得分。"""
     loaded = fixtures or load_single_agent_cases()
@@ -99,6 +122,8 @@ async def evaluate_single_agent_benchmark(
                 bridge,
                 case,
                 system_prompt_template=template,
+                phase=phase,
+                on_case_evaluated=on_case_evaluated,
             )
         )
 

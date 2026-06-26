@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Set
 
 from .expectations import E2eExpect
+from .tool_data import score_tool_data_checks
 
 _COMPLETED_STATUSES = frozenset({"completed", "ok"})
 
@@ -19,6 +20,7 @@ class E2eScore:
     agents_ok: bool
     completion_ok: bool
     completed_subtasks: int
+    tool_data_ok: bool = True
     invoked_agents: List[str] = field(default_factory=list)
     details: List[str] = field(default_factory=list)
 
@@ -30,6 +32,7 @@ class E2eScore:
             "forbidden_ok": self.forbidden_ok,
             "agents_ok": self.agents_ok,
             "completion_ok": self.completion_ok,
+            "tool_data_ok": self.tool_data_ok,
             "completed_subtasks": self.completed_subtasks,
             "invoked_agents": list(self.invoked_agents),
             "details": list(self.details),
@@ -62,6 +65,21 @@ def _completed_subtask_count(subtask_results: Dict[str, Any]) -> int:
     return count
 
 
+def build_e2e_keyword_corpus(result: Dict[str, Any]) -> str:
+    """Text used for keyword / forbidden checks: final reply + subtask summaries."""
+    parts: List[str] = []
+    final_response = _normalize_text(result.get("final_response"))
+    if final_response:
+        parts.append(final_response)
+    for item in (result.get("subtask_results") or {}).values():
+        if not isinstance(item, dict):
+            continue
+        summary = _normalize_text(item.get("agent_summary"))
+        if summary:
+            parts.append(summary)
+    return "\n".join(parts)
+
+
 def _slot_groups_satisfied(text: str, slot_groups: List[List[str]]) -> tuple[bool, List[str]]:
     if not slot_groups:
         return True, []
@@ -78,6 +96,7 @@ def score_e2e_run(result: Dict[str, Any], expect: E2eExpect) -> E2eScore:
     total = 0.0
 
     final_response = _normalize_text(result.get("final_response"))
+    keyword_corpus = build_e2e_keyword_corpus(result)
     subtask_results = result.get("subtask_results") or {}
     invoked = sorted(_invoked_agents(subtask_results))
     completed = _completed_subtask_count(subtask_results)
@@ -88,32 +107,39 @@ def score_e2e_run(result: Dict[str, Any], expect: E2eExpect) -> E2eScore:
     else:
         details.append("缺少 final_response")
 
+    keyword_weight = 0.15 if expect.tool_checks else 0.25
+    tool_weight = 0.10 if expect.tool_checks else 0.0
+
     keyword_ok = True
     if expect.required_response_slot_groups:
         keyword_ok, missing_groups = _slot_groups_satisfied(
-            final_response,
+            keyword_corpus,
             expect.required_response_slot_groups,
         )
         if keyword_ok:
-            total += 0.25
+            total += keyword_weight
         else:
-            details.append(f"回复缺少关键词组: {missing_groups}")
+            details.append(
+                f"回复/子任务摘要缺少关键词组: {missing_groups}"
+            )
     elif expect.required_response_keywords:
-        missing_keywords = [kw for kw in expect.required_response_keywords if kw not in final_response]
+        missing_keywords = [
+            kw for kw in expect.required_response_keywords if kw not in keyword_corpus
+        ]
         keyword_ok = not missing_keywords
         if keyword_ok:
-            total += 0.25
+            total += keyword_weight
         else:
-            details.append(f"回复缺少关键词: {missing_keywords}")
+            details.append(f"回复/子任务摘要缺少关键词: {missing_keywords}")
     else:
-        total += 0.25
+        total += keyword_weight
 
-    forbidden_hits = [kw for kw in expect.forbidden_response_keywords if kw in final_response]
+    forbidden_hits = [kw for kw in expect.forbidden_response_keywords if kw in keyword_corpus]
     forbidden_ok = not forbidden_hits
     if forbidden_ok:
         total += 0.15
     else:
-        details.append(f"回复出现禁止关键词: {forbidden_hits}")
+        details.append(f"回复/子任务摘要出现禁止关键词: {forbidden_hits}")
 
     agents_ok = True
     if expect.required_agents:
@@ -137,6 +163,15 @@ def score_e2e_run(result: Dict[str, Any], expect: E2eExpect) -> E2eScore:
             f"完成子任务 {completed} < 期望最少 {expect.min_completed_subtasks}"
         )
 
+    tool_data_ok = True
+    if expect.tool_checks:
+        tool_data_ok, tool_ratio, tool_details = score_tool_data_checks(
+            subtask_results,
+            expect.tool_checks,
+        )
+        total += tool_weight * tool_ratio
+        details.extend(tool_details)
+
     return E2eScore(
         total=min(total, 1.0),
         response_ok=response_ok,
@@ -144,6 +179,7 @@ def score_e2e_run(result: Dict[str, Any], expect: E2eExpect) -> E2eScore:
         forbidden_ok=forbidden_ok,
         agents_ok=agents_ok,
         completion_ok=completion_ok,
+        tool_data_ok=tool_data_ok,
         completed_subtasks=completed,
         invoked_agents=invoked,
         details=details,

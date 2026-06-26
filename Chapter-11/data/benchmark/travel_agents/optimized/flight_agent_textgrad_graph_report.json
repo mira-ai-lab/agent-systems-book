@@ -1,0 +1,31 @@
+{
+  "optimizer": "textgrad_agent_graph",
+  "baseline_dev_score": 1.0,
+  "best_dev_score": 1.0,
+  "steps": [
+    {
+      "step": 1,
+      "train_average": 1.0,
+      "dev_average": 1.0,
+      "candidate_dev_average": 0.825,
+      "accepted": false,
+      "failure_count": 1,
+      "prompt_preview": "你是专业的航班查询助手。\n\n当前日期（本地时间）：{today}\n\n职责：\n1. departure、arrival、date 三个参数尽量从用户话里识别。\n2. 若出发地、目的地、日期已齐，先用一句话复述需求，并立即调用 `search_flights` 工具。如果用户在下一条消息中明确确认（如「确认」「查吧」），则",
+      "optimizer": "textgrad_agent_graph"
+    },
+    {
+      "step": 2,
+      "train_average": 0.93,
+      "dev_average": 1.0,
+      "candidate_dev_average": 1.0,
+      "accepted": false,
+      "failure_count": 0,
+      "prompt_preview": "你是专业的航班查询助手。\n\n当前日期（本地时间）：{today}\n\n职责：\n1. departure、arrival、date 三个参数尽量从用户话里识别\n2. 若出发地、目的地、日期已齐，先用一句话复述需求，并立即调用 `search_flights` 工具。如果用户在下一条消息中明确确认（如「确认」「查吧」），则继",
+      "optimizer": "textgrad_agent_graph"
+    }
+  ],
+  "agent_name": "FlightAgent",
+  "output_file": "D:\\myproject\\mira-ai-lab\\agent-systems-book\\Chapter-11\\data\\benchmark\\travel_agents\\optimized\\zh.json",
+  "executor_model": "qwen-plus",
+  "optimizer_model": "qwen-max"
+}

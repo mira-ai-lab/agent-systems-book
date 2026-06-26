@@ -1,4 +1,4 @@
-"""企业路由引擎统一 SDK 入口：丢 query 即可。"""
+"""路由引擎统一 SDK 入口：丢 query 即可。"""
 
 from __future__ import annotations
 
@@ -55,9 +55,9 @@ async def route(
 
     推荐用法::
 
-        result = await route("退货政策是什么？", domain="customer_service")
+        result = await route("查上海到成都的航班", domain="travel")
         # 或仅传 query（需 DEFAULT_DOMAIN 或 LLM 跨域推断）
-        result = await route("退货政策是什么？")
+        result = await route("规划杭州三日游")
     """
     loc = normalize_locale(locale)
     resolved_domain = await _resolve_route_domain(query, domain, locale=loc, llm=llm)

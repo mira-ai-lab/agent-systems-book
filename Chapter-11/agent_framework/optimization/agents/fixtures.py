@@ -1,7 +1,7 @@
 """旅行子 Agent 单测 / 优化 benchmark fixtures 加载器。
 
-数据来源：``tests/fixtures/travel_single_agent_cases.json``（5 Agent × 2 case）。
-Agent-B1 从 FlightAgent 起步，fixtures 已覆盖全部子 Agent 便于后续 Agent-B2 扩展。
+数据来源：``tests/fixtures/travel_single_agent_cases.json``。
+若 JSON 含 ``splits`` 则按 case_id 划分；否则回退为每 Agent 第 1 条=train、第 2 条=dev。
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ DEFAULT_CASES_PATH = (
 )
 # 兼容 tests.travel_agents.cases.CASES_PATH
 CASES_PATH = DEFAULT_CASES_PATH
+VALID_SPLITS = ("train", "dev", "test", "all")
 
 
 @dataclass(frozen=True)
@@ -37,19 +38,40 @@ class SingleAgentCase:
 class SingleAgentCaseFixtures:
     locale: str
     cases: List[SingleAgentCase]
+    splits: Dict[str, List[str]] = field(default_factory=dict)
 
     def cases_for_agent(self, agent_name: str) -> List[SingleAgentCase]:
         """按 Agent 名筛选 case（如 FlightAgent）。"""
         return [case for case in self.cases if case.agent_name == agent_name]
 
     def cases_for_split(self, split: str, *, agent_name: Optional[str] = None) -> List[SingleAgentCase]:
-        """简易 split：train=每个 Agent 第 1 条，dev=每个 Agent 第 2 条，all=全部。"""
+        """按 split 返回 case；可选再按 agent_name 过滤。"""
         normalized = (split or "all").strip().lower()
+        if normalized not in VALID_SPLITS:
+            raise ValueError(f"不支持的 split='{split}'，可选: {', '.join(VALID_SPLITS)}")
+
         pool = self.cases_for_agent(agent_name) if agent_name else list(self.cases)
         if normalized == "all":
             return pool
+
+        if self.splits:
+            ids = set(self.splits.get(normalized, []))
+            if not ids:
+                raise ValueError(f"fixtures 中未定义 split='{normalized}'")
+            selected = [case for case in pool if case.case_id in ids]
+            if agent_name:
+                agent_ids = {case.case_id for case in self.cases_for_agent(agent_name)}
+                relevant = ids & agent_ids
+                missing = relevant - {case.case_id for case in selected}
+            else:
+                missing = ids - {case.case_id for case in selected}
+            if missing:
+                raise ValueError(f"split '{normalized}' 引用了未知 case: {sorted(missing)}")
+            return selected
+
+        #  legacy：每个 Agent 第 1 条=train，第 2 条=dev
         if normalized not in ("train", "dev"):
-            raise ValueError(f"不支持的 split='{split}'，可选: train, dev, all")
+            raise ValueError(f"未配置 splits 时不支持 split='{normalized}'")
 
         by_agent: Dict[str, List[SingleAgentCase]] = {}
         for case in pool:
@@ -107,4 +129,12 @@ def load_single_agent_cases(path: Optional[Path] = None) -> SingleAgentCaseFixtu
 
     if not cases:
         raise ValueError("travel_single_agent_cases.json: 未加载到任何 case")
-    return SingleAgentCaseFixtures(locale=locale, cases=cases)
+
+    splits_raw = payload.get("splits") or {}
+    splits = (
+        {str(key): list(value or []) for key, value in splits_raw.items()}
+        if isinstance(splits_raw, dict)
+        else {}
+    )
+
+    return SingleAgentCaseFixtures(locale=locale, cases=cases, splits=splits)

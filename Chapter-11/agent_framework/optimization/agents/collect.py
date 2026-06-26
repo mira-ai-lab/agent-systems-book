@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
-from .evaluator import SingleAgentCaseResult, evaluate_single_agent_case
+from .evaluator import CaseEvalProgressCallback, SingleAgentCaseResult, evaluate_single_agent_case
 from .fixtures import SingleAgentCase
 from .runtime import AgentSyncBridge
 
@@ -15,6 +15,7 @@ async def collect_single_agent_failures(
     *,
     system_prompt_template: str,
     failure_threshold: float,
+    on_case_evaluated: Optional[CaseEvalProgressCallback] = None,
 ) -> List[Tuple[SingleAgentCaseResult, SingleAgentCase]]:
     """返回得分低于阈值的 (result, case) 列表。"""
     failures: List[Tuple[SingleAgentCaseResult, SingleAgentCase]] = []
@@ -23,6 +24,8 @@ async def collect_single_agent_failures(
             bridge,
             case,
             system_prompt_template=system_prompt_template,
+            phase="train_collect",
+            on_case_evaluated=on_case_evaluated,
         )
         if result.score.total < failure_threshold:
             failures.append((result, case))

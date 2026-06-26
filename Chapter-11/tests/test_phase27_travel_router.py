@@ -1,4 +1,4 @@
-"""Phase 27：Router travel 语义拆解（TaskPlanner agent_routing）。"""
+﻿"""Phase 27：Router travel 语义拆解（TaskPlanner agent_routing）。"""
 
 import asyncio
 import json
@@ -26,7 +26,7 @@ def _travel_registry():
 def test_should_use_semantic_routing_travel_only():
     cfg = RouterConfig()
     assert should_use_semantic_routing("travel", cfg)
-    assert not should_use_semantic_routing("customer_service", cfg)
+    assert not should_use_semantic_routing("demo", cfg)
     assert not should_use_semantic_routing(
         "travel",
         RouterConfig(semantic_task_routing=False),

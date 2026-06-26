@@ -1,4 +1,4 @@
-"""Phase 24 P1：Registry 产品化（24.9–24.12）。"""
+﻿"""Phase 24 P1：Registry 产品化（24.9–24.12）。"""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -42,44 +42,44 @@ def test_build_domain_catalog_includes_dynamic_and_shared():
             name="SharedFAQ",
             description="共享 FAQ 别名",
             scope="shared",
-            alias_of="FAQAgent",
+            alias_of="WeatherAgent",
         ),
     )
     catalog = build_domain_catalog()
     assert "RuntimeHelper" in catalog
     assert "SharedFAQ" in catalog
-    assert "alias→FAQAgent" in catalog
+    assert "alias→WeatherAgent" in catalog
     assert "跨域共享 Agent" in catalog
 
 
 def test_summarize_domain_agents_marks_dynamic():
     get_dynamic_agent_store().register(
-        "customer_service",
+        "travel",
         DynamicAgentRecord(name="RuntimeFAQ", description="运行时 FAQ"),
     )
-    text = summarize_domain_agents("customer_service")
+    text = summarize_domain_agents("travel")
     assert "RuntimeFAQ" in text
     assert "dynamic" in text
 
 
 def test_shared_alias_inherits_static_skills():
-    cs_registry = get_domain_plugin("customer_service").create_registry()
+    travel_registry = get_domain_plugin("travel").create_registry()
     get_dynamic_agent_store().register(
         "demo",
         DynamicAgentRecord(
             name="GlobalFAQ",
             description="",
             scope="shared",
-            alias_of="FAQAgent",
+            alias_of="WeatherAgent",
         ),
     )
     merged, _ = merge_dynamic_agents("demo", get_domain_plugin("demo").create_registry())
     assert "GlobalFAQ" in merged.get_agent_names()
     info = merged.agents["GlobalFAQ"]
-    assert info.get("references") == "FAQAgent"
-    assert info.get("alias_of") == "FAQAgent"
-    faq_skills = cs_registry.agents["FAQAgent"].get("skills") or []
-    if faq_skills:
+    assert info.get("references") == "WeatherAgent"
+    assert info.get("alias_of") == "WeatherAgent"
+    weather_skills = travel_registry.agents["WeatherAgent"].get("skills") or []
+    if weather_skills:
         assert info.get("skills")
 
 
@@ -187,22 +187,22 @@ def test_api_register_agent_returns_registry_event():
             "name": "AliasFAQ",
             "description": "共享 FAQ 入口",
             "scope": "shared",
-            "alias_of": "FAQAgent",
+            "alias_of": "WeatherAgent",
         },
     )
     assert resp.status_code == 200
     body = resp.json()
     assert body["registry_event"]["type"] == "registry.updated"
-    assert body["agent"]["alias_of"] == "FAQAgent"
+    assert body["agent"]["alias_of"] == "WeatherAgent"
 
 
 def test_domain_catalog_visible_to_router_classification():
     get_dynamic_agent_store().register(
-        "customer_service",
+        "travel",
         DynamicAgentRecord(name="HotlineAgent", description="热线升级"),
     )
-    registry = get_domain_plugin("customer_service").create_registry()
-    merged, _ = merge_dynamic_agents("customer_service", registry)
+    registry = get_domain_plugin("travel").create_registry()
+    merged, _ = merge_dynamic_agents("travel", registry)
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock(
         side_effect=[
@@ -214,7 +214,7 @@ def test_domain_catalog_visible_to_router_classification():
         RouterEngine(
             mock_llm,
             merged,
-            domain="customer_service",
+            domain="travel",
             config=RouterConfig(enable_instruction_build=False),
         ).route("我要转人工热线")
     )

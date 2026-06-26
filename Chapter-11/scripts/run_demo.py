@@ -13,10 +13,6 @@
 Router 统一入口::
 
     python scripts/run_demo.py --profile workflow --show-graph
-
-客服域示例::
-
-    python scripts/run_demo.py --domain customer_service -q "订单号是 12345，我想咨询退货政策"
 """
 
 from __future__ import annotations
@@ -50,7 +46,6 @@ logger = get_logger(__name__)
 
 DEFAULT_DOMAIN = "travel"
 DEFAULT_PROFILE = "auto"
-CUSTOMER_SERVICE_SAMPLE_QUERY = "订单号是 12345，我想咨询退货政策"
 
 TRAVEL_SAMPLE_QUERY = """
 你能帮我规划一个下周的多城市旅行吗？我还没想好行程顺序……
@@ -217,7 +212,7 @@ async def main() -> None:
     parser.add_argument(
         "--domain",
         default=DEFAULT_DOMAIN,
-        help=f"领域名（默认 {DEFAULT_DOMAIN}；customer_service 为客服示例域）",
+        help=f"领域名（默认 {DEFAULT_DOMAIN}）",
     )
     parser.add_argument(
         "--profile",
@@ -246,8 +241,6 @@ async def main() -> None:
     profile = args.profile.strip()
     if args.query:
         query = args.query.strip()
-    elif domain == "customer_service":
-        query = CUSTOMER_SERVICE_SAMPLE_QUERY
     else:
         query = TRAVEL_SAMPLE_QUERY
 
