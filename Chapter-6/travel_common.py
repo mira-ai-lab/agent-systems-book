@@ -1,9 +1,10 @@
 import hashlib
+import asyncio
 import os
 import re
 import time
 import urllib.parse
-from dataclasses import dataclass
+import math
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -14,6 +15,14 @@ from pydantic import BaseModel, Field
 
 def norm_text(s: Optional[str]) -> str:
     return (s or "").strip()
+
+
+def normalize_city_name(city: Optional[str]) -> str:
+    """上海市 → 上海（地图 region / 城市表查找用）。"""
+    c = norm_text(city)
+    if c.endswith("市") and len(c) > 1:
+        return c[:-1]
+    return c
 
 
 def require_non_empty(value: Optional[str], field: str) -> Tuple[bool, str]:
@@ -293,6 +302,14 @@ def pick_many(items: Sequence[Dict[str, Any]], n: int, *seed_parts: str) -> List
 # ---- API 适配器（优先使用真实 API，回退到模拟数据）----
 
 _HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+_BAIDU_API_LOCK: Optional[asyncio.Lock] = None
+
+
+def _baidu_api_lock() -> asyncio.Lock:
+    global _BAIDU_API_LOCK
+    if _BAIDU_API_LOCK is None:
+        _BAIDU_API_LOCK = asyncio.Lock()
+    return _BAIDU_API_LOCK
 _DOTENV_LOADED = False
 
 
@@ -624,10 +641,11 @@ async def baidu_place_v2_search(
         sn = _baidu_sn("/place/v2/search", params_in_order, sk)
         params_in_order.append(("sn", sn))
 
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
-        r = await client.get(url, params=params_in_order)
-        r.raise_for_status()
-        data = r.json()
+    async with _baidu_api_lock():
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
+            r = await client.get(url, params=params_in_order)
+            r.raise_for_status()
+            data = r.json()
 
     if not isinstance(data, dict):
         return {"error": "invalid_baidu_response", "raw": data}
@@ -721,82 +739,530 @@ def _poi_to_restaurant(poi: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def fetch_hotels_from_api(city: str, *, limit: int = 10, keyword: Optional[str] = None) -> Dict[str, Any]:
-    # 如果已配置则优先使用百度 Place API，否则回退到高德。
-    # keyword: 区域/地标偏好，如「黄浦区」「外滩」；会拼进 POI 搜索词（默认仅「酒店」）
+    # keyword: 原始 preferences；若已含「酒店」则视为完整搜索词，避免重复拼接
     ensure_project_dotenv_loaded()
-    q = norm_text(keyword) or "酒店"
-    if "酒店" not in q:
-        q = f"{q} 酒店"
+    region = normalize_city_name(city) or norm_text(city)
+    pref = norm_text(keyword)
+    q = pref if (pref and "酒店" in pref) else build_hotel_search_query(city, keyword)
     page_n = max(1, min(int(limit or 10), 20))
+    fetch_size = min(20, page_n * 2)
+
     if norm_text(os.getenv("BAIDU_MAP_AK")):
         res = await baidu_place_v2_search(
             query=q,
-            region=city,
+            region=region,
             scope=2,
-            page_size=page_n,
+            page_size=fetch_size,
             filter_="industry_type:hotel|sort_name:total_score|sort_rule:0",
         )
         if not res.get("error"):
             hotels = []
-            for it in (res.get("results") or [])[:page_n]:
+            for it in (res.get("results") or []):
                 if isinstance(it, dict):
                     hotels.append(_baidu_result_to_common_poi(it))
-            return {"hotels": hotels, "data_source": "baidu_place_v2", "search_query": q}
-    # 关键字搜索: city + 酒店 (高德)
-    res2 = await amap_place_text_search(region=city, keyword=q, limit=limit)
+            hotels = _filter_hotels_for_city(hotels, region)[:page_n]
+            if hotels:
+                # 结果过少时自动放宽检索（避免核心城区过窄导致仅 1 家）
+                min_expected = min(3, page_n)
+                if len(hotels) < min_expected:
+                    broad_q = f"{normalize_city_name(city)} 酒店"
+                    if broad_q != q:
+                        res_broad = await baidu_place_v2_search(
+                            query=broad_q,
+                            region=region,
+                            scope=2,
+                            page_size=min(20, page_n * 3),
+                            filter_="industry_type:hotel|sort_name:total_score|sort_rule:0",
+                        )
+                        if not res_broad.get("error"):
+                            for it in (res_broad.get("results") or []):
+                                if isinstance(it, dict):
+                                    hotels.append(_baidu_result_to_common_poi(it))
+                            merged = _filter_hotels_for_city(hotels, region, strict_core=False)
+                            dedup: List[Dict[str, Any]] = []
+                            seen = set()
+                            for h in merged:
+                                key = (norm_text(h.get("name")), norm_text(h.get("address")))
+                                if key in seen:
+                                    continue
+                                seen.add(key)
+                                dedup.append(h)
+                            hotels = dedup[:page_n]
+                return {
+                    "hotels": hotels,
+                    "data_source": "baidu_place_v2",
+                    "search_query": q,
+                }
+
+    res2 = await amap_place_text_search(region=region, keyword=q, limit=fetch_size)
     if res2.get("error"):
         return res2
     hotels2 = []
-    for p in (res2.get("pois") or [])[: max(1, int(limit or 10))]:
+    for p in (res2.get("pois") or []):
         if isinstance(p, dict):
             hotels2.append(_poi_to_hotel(p))
-    return {"hotels": hotels2, "data_source": "amap_place_text", "search_query": q}
+    hotels2 = _filter_hotels_for_city(hotels2, region)[: max(1, int(limit or 10))]
+    return {
+        "hotels": hotels2,
+        "data_source": "amap_place_text",
+        "search_query": q,
+        "note": "已优先筛选核心城区，排除远郊结果" if hotels2 else "核心城区无结果",
+    }
 
 
-async def fetch_attractions_from_api(city: str, *, limit: int = 10) -> Dict[str, Any]:
+_ATTRACTION_POSITIVE_KW = (
+    "景区", "景点", "公园", "园林", "博物馆", "美术馆", "展览馆", "纪念馆",
+    "故居", "古镇", "古城", "古街", "寺", "庙", "祠", "塔", "湖", "山", "湿地",
+)
+_ATTRACTION_REJECT_KW = (
+    "酒店", "宾馆", "民宿", "小区", "公寓", "写字楼", "公司", "培训", "医院", "学校", "商场",
+)
+_ADMIN_NAME_SUFFIX = ("特别行政区", "自治州", "地区", "盟", "市", "省", "县", "区")
+
+
+def _normalize_attraction_query(preferences: Optional[str]) -> str:
+    pref = norm_text(preferences)
+    if not pref:
+        return "景点"
+    if any(k in pref for k in ("历史", "文化", "古迹", "博物馆", "园林", "人文")):
+        return "历史文化 景点"
+    if any(k in pref for k in ("自然", "风光", "湿地", "湖", "山", "徒步")):
+        return "自然风光 景点"
+    return f"{pref} 景点"
+
+
+def _is_valid_attraction_poi(poi: Dict[str, Any]) -> bool:
+    name = norm_text(poi.get("name"))
+    if not name or len(name) < 2:
+        return False
+    for suffix in _ADMIN_NAME_SUFFIX:
+        if name.endswith(suffix):
+            stem = name[: -len(suffix)]
+            if 1 <= len(stem) <= 6:
+                return False
+    if not (norm_text(poi.get("address")) or norm_text(poi.get("district")) or norm_text(poi.get("location"))):
+        return False
+    if any(k in name for k in _ATTRACTION_REJECT_KW):
+        return False
+    typ = norm_text(poi.get("type")).lower()
+    raw = poi.get("raw") or {}
+    detail = raw.get("detail_info") or {}
+    tag = norm_text(detail.get("classified_poi_tag") or detail.get("tag") or "")
+    text = f"{name} {typ} {tag}"
+    if any(k in text for k in _ATTRACTION_REJECT_KW):
+        return False
+    if tag:
+        return any(k in tag for k in _ATTRACTION_POSITIVE_KW)
+    return any(k in text for k in _ATTRACTION_POSITIVE_KW)
+
+
+async def fetch_attractions_from_api(
+    city: str,
+    *,
+    preferences: Optional[str] = None,
+    limit: int = 10,
+) -> Dict[str, Any]:
     """
     获取用于行程规划的景点/POI 候选列表。
     如果已配置则优先使用百度 Place v2，否则回退到高德。
     """
     ensure_project_dotenv_loaded()
+    query = _normalize_attraction_query(preferences)
     if norm_text(os.getenv("BAIDU_MAP_AK")):
         res = await baidu_place_v2_search(
-            query="景点",
+            query=query,
             region=city,
             scope=2,
-            page_size=min(20, max(1, int(limit or 10))),
+            page_size=min(20, max(1, int(limit or 10)) * 3),
             filter_="industry_type:life|sort_name:overall_rating|sort_rule:0",
         )
         if not res.get("error"):
             items = []
-            for it in (res.get("results") or [])[: max(1, int(limit or 10))]:
+            for it in (res.get("results") or []):
                 if isinstance(it, dict):
                     poi = _baidu_result_to_common_poi(it)
-                    # 减少下游 LLM prompt 的负载大小
-                    poi.pop("raw", None)
-                    items.append(poi)
-            return {"attractions": items, "data_source": "baidu_place_v2"}
+                    if _is_valid_attraction_poi(poi):
+                        # 减少下游 LLM prompt 的负载大小
+                        poi.pop("raw", None)
+                        items.append(poi)
+                    if len(items) >= max(1, int(limit or 10)):
+                        break
+            return {
+                "attractions": items,
+                "data_source": "baidu_place_v2",
+                "search_query": query,
+            }
 
     # 高德回退方案
-    res2 = await amap_place_text_search(region=city, keyword="景点", limit=limit)
+    res2 = await amap_place_text_search(
+        region=city,
+        keyword=query,
+        limit=min(20, max(1, int(limit or 10)) * 3),
+    )
     if res2.get("error"):
         return res2
     items2 = []
-    for p in (res2.get("pois") or [])[: max(1, int(limit or 10))]:
+    for p in (res2.get("pois") or []):
         if isinstance(p, dict):
-            items2.append(
-                {
-                    "name": p.get("name"),
-                    "district": p.get("adname") or p.get("address"),
-                    "address": p.get("address"),
-                    "tel": p.get("tel"),
-                    "location": p.get("location"),
-                    "rating": (p.get("business") or {}).get("rating") if isinstance(p.get("business"), dict) else None,
-                    "avg_price_cny": (p.get("business") or {}).get("cost") if isinstance(p.get("business"), dict) else None,
-                    "type": p.get("type"),
-                }
+            item = {
+                "name": p.get("name"),
+                "district": p.get("adname") or p.get("address"),
+                "address": p.get("address"),
+                "tel": p.get("tel"),
+                "location": p.get("location"),
+                "rating": (p.get("business") or {}).get("rating") if isinstance(p.get("business"), dict) else None,
+                "avg_price_cny": (p.get("business") or {}).get("cost") if isinstance(p.get("business"), dict) else None,
+                "type": p.get("type"),
+            }
+            if _is_valid_attraction_poi(item):
+                items2.append(item)
+            if len(items2) >= max(1, int(limit or 10)):
+                break
+    return {"attractions": items2, "data_source": "amap_place_text", "search_query": query}
+
+
+def _poi_slot(poi: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """行程 slot 用 POI 摘要（不含 raw 等大字段）。"""
+    if not isinstance(poi, dict) or not norm_text(poi.get("name")):
+        return None
+    return {
+        k: poi.get(k)
+        for k in (
+            "name", "address", "district", "location", "rating",
+            "avg_price_cny", "type", "tel", "cuisine",
+        )
+        if poi.get(k) is not None
+    }
+
+
+def _parse_lng_lat(location: Any) -> Optional[Tuple[float, float]]:
+    """解析地图 API 常见的 "lng,lat" 坐标。"""
+    if not location:
+        return None
+    if isinstance(location, dict):
+        lng = location.get("lng") or location.get("lon") or location.get("longitude")
+        lat = location.get("lat") or location.get("latitude")
+    else:
+        parts = str(location).split(",")
+        if len(parts) != 2:
+            return None
+        lng, lat = parts[0], parts[1]
+    if lng is None or lat is None:
+        return None
+    try:
+        return float(str(lng).strip()), float(str(lat).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _haversine_m(a: Tuple[float, float], b: Tuple[float, float]) -> int:
+    """按经纬度估算两点直线距离（米）。"""
+    lng1, lat1 = a
+    lng2, lat2 = b
+    radius_m = 6_371_000
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lng2 - lng1)
+    h = (
+        math.sin(d_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    )
+    return int(2 * radius_m * math.atan2(math.sqrt(h), math.sqrt(1 - h)))
+
+
+def _estimate_duration_min(distance_m: int, mode: str) -> int:
+    """无 Directions API 时按常见城市出行速度估算耗时。"""
+    speeds_kmh = {
+        "walk": 4.5,
+        "walking": 4.5,
+        "bike": 12,
+        "riding": 12,
+        "drive": 24,
+        "driving": 24,
+        "transit": 18,
+    }
+    speed = speeds_kmh.get(mode, speeds_kmh["transit"])
+    return max(1, int(round((distance_m / 1000) / speed * 60)))
+
+
+def _select_baidu_direction_mode(distance_m: int) -> str:
+    """按两点距离选择百度 Direction API 类型。"""
+    if distance_m <= 1200:
+        return "walking"
+    if distance_m <= 5000:
+        return "riding"
+    if distance_m <= 30000:
+        return "transit"
+    return "driving"
+
+
+def _coord_to_baidu_param(coord: Tuple[float, float]) -> str:
+    """Baidu Direction API 使用 lat,lng；本项目 POI location 存储为 lng,lat。"""
+    lng, lat = coord
+    return f"{lat},{lng}"
+
+
+def _extract_baidu_route_summary(data: Dict[str, Any], mode: str) -> Dict[str, Any]:
+    result = data.get("result") if isinstance(data, dict) else None
+    if not isinstance(result, dict):
+        return {"error": "invalid_baidu_direction_result"}
+
+    routes = result.get("routes")
+    if not isinstance(routes, list) or not routes:
+        routes = result.get("routes") or result.get("routes_list") or []
+    if isinstance(routes, list) and routes:
+        route = routes[0] if isinstance(routes[0], dict) else {}
+    else:
+        route = {}
+
+    # transit 有些响应将方案放在 result.routes[0].scheme / scheme 里，做宽松兼容。
+    if mode == "transit" and isinstance(route.get("scheme"), list) and route["scheme"]:
+        scheme = route["scheme"][0]
+        if isinstance(scheme, dict):
+            route = scheme
+
+    distance = route.get("distance") or route.get("distance_m")
+    duration = route.get("duration") or route.get("duration_s")
+    try:
+        distance_m = int(float(distance)) if distance is not None else None
+    except (TypeError, ValueError):
+        distance_m = None
+    try:
+        duration_min = int(round(float(duration) / 60)) if duration is not None else None
+    except (TypeError, ValueError):
+        duration_min = None
+
+    steps = route.get("steps")
+    return {
+        "distance_m": distance_m,
+        "duration_min": duration_min,
+        "steps_count": len(steps) if isinstance(steps, list) else None,
+    }
+
+
+async def baidu_direction_route(
+    origin: Tuple[float, float],
+    destination: Tuple[float, float],
+    *,
+    mode: str,
+    region: Optional[str] = None,
+) -> Dict[str, Any]:
+    """调用百度 Direction API 获取两点路线；失败时返回 error，不抛出。"""
+    ensure_project_dotenv_loaded()
+    ak = norm_text(os.getenv("BAIDU_MAP_AK"))
+    if not ak:
+        return {"error": "BAIDU_MAP_AK not set"}
+
+    api_mode = mode if mode in ("driving", "walking", "riding", "transit") else "transit"
+    path = f"/direction/v2/{api_mode}"
+    url = f"https://api.map.baidu.com{path}"
+    params_in_order: List[Tuple[str, str]] = [
+        ("origin", _coord_to_baidu_param(origin)),
+        ("destination", _coord_to_baidu_param(destination)),
+        ("ak", ak),
+        ("output", "json"),
+    ]
+    if api_mode == "transit" and region:
+        params_in_order.append(("region", normalize_city_name(region)))
+
+    sk = norm_text(os.getenv("BAIDU_MAP_SK"))
+    if sk:
+        params_in_order.append(("timestamp", str(int(time.time()))))
+        params_in_order.append(("sn", _baidu_sn(path, params_in_order, sk)))
+
+    try:
+        async with _baidu_api_lock():
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
+                resp = await client.get(url, params=dict(params_in_order))
+                resp.raise_for_status()
+                data = resp.json()
+    except Exception as exc:
+        return {"error": "baidu_direction_request_failed", "message": f"{type(exc).__name__}: {exc}"}
+
+    if not isinstance(data, dict):
+        return {"error": "invalid_baidu_direction_response", "raw": data}
+    if str(data.get("status")) not in ("0", "OK", "ok"):
+        return {
+            "error": "baidu_direction_error",
+            "status": data.get("status"),
+            "message": data.get("message") or data.get("msg"),
+            "raw": data,
+        }
+
+    summary = _extract_baidu_route_summary(data, api_mode)
+    if summary.get("error"):
+        return {**summary, "raw": data}
+    return {
+        "data_source": "baidu_direction_v2",
+        "mode": api_mode,
+        **summary,
+    }
+
+
+def build_local_route_plan(
+    pois: List[Dict[str, Any]],
+    *,
+    mode: str = "transit",
+) -> Dict[str, Any]:
+    """
+    基于 POI 经纬度生成当日局部路线顺序和路段估算。
+    当前实现使用坐标贪心排序；有地图 Directions API 时可在此替换为真实路径规划。
+    """
+    valid: List[Dict[str, Any]] = []
+    skipped: List[str] = []
+    for poi in pois:
+        if not isinstance(poi, dict) or not norm_text(poi.get("name")):
+            continue
+        coord = _parse_lng_lat(poi.get("location"))
+        if not coord:
+            skipped.append(norm_text(poi.get("name")))
+            continue
+        valid.append({**poi, "_coord": coord})
+
+    if len(valid) < 2:
+        return {
+            "ordered_pois": [_poi_slot(p) for p in valid if _poi_slot(p)],
+            "segments": [],
+            "routing_status": "insufficient_coordinates",
+            "skipped_without_location": skipped,
+            "mode": mode,
+        }
+
+    ordered = [valid.pop(0)]
+    while valid:
+        current = ordered[-1]["_coord"]
+        next_idx = min(
+            range(len(valid)),
+            key=lambda i: _haversine_m(current, valid[i]["_coord"]),
+        )
+        ordered.append(valid.pop(next_idx))
+
+    segments = []
+    total_distance = 0
+    total_duration = 0
+    for prev, curr in zip(ordered, ordered[1:]):
+        distance = _haversine_m(prev["_coord"], curr["_coord"])
+        duration = _estimate_duration_min(distance, mode)
+        total_distance += distance
+        total_duration += duration
+        segments.append({
+            "from": prev.get("name"),
+            "to": curr.get("name"),
+            "distance_m": distance,
+            "duration_min_est": duration,
+            "mode": mode,
+            "source": "coordinate_estimate",
+        })
+
+    clean_ordered = []
+    for poi in ordered:
+        item = dict(poi)
+        item.pop("_coord", None)
+        slot = _poi_slot(item)
+        if slot:
+            clean_ordered.append(slot)
+
+    return {
+        "ordered_pois": clean_ordered,
+        "segments": segments,
+        "total_distance_m": total_distance,
+        "total_duration_min_est": total_duration,
+        "routing_status": "estimated_by_coordinates",
+        "skipped_without_location": skipped,
+        "mode": mode,
+    }
+
+
+async def build_local_route_plan_with_baidu(
+    pois: List[Dict[str, Any]],
+    *,
+    region: Optional[str] = None,
+    mode: str = "auto",
+) -> Dict[str, Any]:
+    """优先使用百度路线规划；不可用时回退到坐标估算。"""
+    estimate = build_local_route_plan(pois, mode="transit" if mode == "auto" else mode)
+    if estimate.get("routing_status") != "estimated_by_coordinates":
+        return estimate
+
+    coord_by_name: Dict[str, Tuple[float, float]] = {}
+    for poi in pois:
+        if isinstance(poi, dict) and norm_text(poi.get("name")):
+            coord = _parse_lng_lat(poi.get("location"))
+            if coord:
+                coord_by_name[norm_text(poi.get("name"))] = coord
+
+    baidu_segments = []
+    total_distance = 0
+    total_duration = 0
+    used_baidu = False
+    for segment in estimate.get("segments") or []:
+        from_name = norm_text(segment.get("from"))
+        to_name = norm_text(segment.get("to"))
+        origin = coord_by_name.get(from_name)
+        destination = coord_by_name.get(to_name)
+        if not origin or not destination:
+            baidu_segments.append(segment)
+            continue
+
+        estimated_distance = int(segment.get("distance_m") or _haversine_m(origin, destination))
+        api_mode = _select_baidu_direction_mode(estimated_distance) if mode == "auto" else mode
+        route = await baidu_direction_route(origin, destination, mode=api_mode, region=region)
+        if route.get("error"):
+            baidu_segments.append({
+                **segment,
+                "api_mode": api_mode,
+                "baidu_error": route.get("message") or route.get("error"),
+            })
+            total_distance += int(segment.get("distance_m") or 0)
+            total_duration += int(segment.get("duration_min_est") or 0)
+            continue
+
+        distance_m = route.get("distance_m") or segment.get("distance_m")
+        duration_min = route.get("duration_min") or segment.get("duration_min_est")
+        used_baidu = True
+        total_distance += int(distance_m or 0)
+        total_duration += int(duration_min or 0)
+        baidu_segments.append({
+            "from": segment.get("from"),
+            "to": segment.get("to"),
+            "distance_m": distance_m,
+            "duration_min": duration_min,
+            "mode": route.get("mode") or api_mode,
+            "source": "baidu_direction_v2",
+            "steps_count": route.get("steps_count"),
+        })
+
+    return {
+        **estimate,
+        "segments": baidu_segments,
+        "total_distance_m": total_distance,
+        "total_duration_min": total_duration if used_baidu else None,
+        "total_duration_min_est": None if used_baidu else estimate.get("total_duration_min_est"),
+        "routing_status": "baidu_direction_v2" if used_baidu else "estimated_by_coordinates",
+        "mode": "auto" if mode == "auto" else mode,
+    }
+
+
+async def enrich_itinerary_routes_with_baidu(itinerary: Dict[str, Any]) -> Dict[str, Any]:
+    """根据每日 slot POI 的经纬度刷新 local_route。"""
+    plan = itinerary.get("plan")
+    if not isinstance(plan, list):
+        return itinerary
+    for day in plan:
+        if not isinstance(day, dict):
+            continue
+        pois: List[Dict[str, Any]] = []
+        for slot in day.get("slots") or []:
+            if isinstance(slot, dict) and isinstance(slot.get("poi"), dict):
+                pois.append(slot["poi"])
+        if pois:
+            day["local_route"] = await build_local_route_plan_with_baidu(
+                pois,
+                region=day.get("city") or itinerary.get("destination_city"),
+                mode="auto",
             )
-    return {"attractions": items2, "data_source": "amap_place_text"}
+    return itinerary
 
 
 def build_itinerary_from_candidates(
@@ -811,8 +1277,8 @@ def build_itinerary_from_candidates(
     hotels: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
-    从候选 POI 中确定性构建逐日行程骨架。
-    LLM 随后可以润色措辞/添加提示。
+    从候选 POI 构建结构化逐日行程骨架（仅 JSON，不含自然语言攻略）。
+    叙事润色由 ItineraryAgent / 聚合 LLM 完成。
     """
     d = max(1, int(days or 1))
     pref = norm_text(preferences)
@@ -822,70 +1288,197 @@ def build_itinerary_from_candidates(
     rests = [r for r in (restaurants or []) if isinstance(r, dict) and norm_text(r.get("name"))]
     hots = [h for h in (hotels or []) if isinstance(h, dict) and norm_text(h.get("name"))]
 
-    # 如果必去景点不在列表中，确保将其作为伪景点加入
     if must:
         known = {norm_text(a.get("name")) for a in atts}
         for mv in must:
             if norm_text(mv) and norm_text(mv) not in known:
-                atts.insert(0, {"name": mv, "address": None, "district": None, "location": None, "rating": None, "avg_price_cny": None, "type": "must_visit"})
+                atts.insert(0, {
+                    "name": mv,
+                    "type": "must_visit",
+                    "source": "user_must_visit",
+                })
+
+    if not atts:
+        return {
+            "error": "no_attraction_candidates",
+            "message": (
+                "未获取到可用景点 POI，无法生成结构化行程；"
+                "请确认地图 API 配置，或在 attraction_list 中传入景点。"
+            ),
+            "departure_city": departure_city,
+            "destination_city": destination_city,
+            "days": d,
+            "preferences": pref,
+            "must_visit": must,
+            "data_source": "itinerary_builder",
+            "candidates": {
+                "attractions": [],
+                "restaurants": [_poi_slot(r) for r in rests[:10] if _poi_slot(r)],
+                "hotels": [_poi_slot(h) for h in hots[:5] if _poi_slot(h)],
+            },
+        }
 
     key = f"{departure_city}|{destination_city}|{d}|{pref}|{','.join(must)}"
-    if not atts:
-        # 回退到之前的模拟行为
-        base = build_itinerary(departure_city, destination_city, d, preferences=pref, must_visit=must)
-        base["data_source"] = "stub(mafengwo_guides)"
-        return base
-
     picked_atts = pick_many(atts, min(len(atts), max(3, min(12, d * 2 + 2))), key, "atts")
     picked_rests = pick_many(rests, min(len(rests), max(2, min(10, d + 2))), key, "rests") if rests else []
-    # 缩小负载以供下游 LLM 使用
-    for x in picked_atts:
-        if isinstance(x, dict):
-            x.pop("raw", None)
-    for x in picked_rests:
-        if isinstance(x, dict):
-            x.pop("raw", None)
-    for x in hots:
-        if isinstance(x, dict):
-            x.pop("raw", None)
 
     days_out: List[Dict[str, Any]] = []
     for i in range(1, d + 1):
         a_m = picked_atts[(i - 1) % len(picked_atts)]
-        a_a = picked_atts[(i) % len(picked_atts)]
+        a_a = picked_atts[i % len(picked_atts)]
         r_e = picked_rests[(i - 1) % len(picked_rests)] if picked_rests else None
-        evening = f"晚餐：{r_e.get('name')}（可订位） + 夜景/夜市" if isinstance(r_e, dict) else "晚餐：本地热门餐厅 + 夜景/夜市"
-        days_out.append(
-            {
-                "day": i,
-                "morning": f"{a_m.get('name')}（建议早到避开人流）",
-                "afternoon": f"{a_a.get('name')}（结合交通距离调整顺序）",
-                "evening": evening,
-                "notes": "市内交通优先地铁/打车；热门景点建议提前预约；每晚按体力留出机动时间。",
-            }
-        )
+        route_pois = [p for p in (a_m, a_a, r_e) if isinstance(p, dict)]
+        route_plan = build_local_route_plan(route_pois)
+        slots = [
+            {"period": "morning", "category": "attraction", "poi": _poi_slot(a_m)},
+            {"period": "afternoon", "category": "attraction", "poi": _poi_slot(a_a)},
+        ]
+        if r_e:
+            slots.append({"period": "evening", "category": "dining", "poi": _poi_slot(r_e)})
+        days_out.append({
+            "day": i,
+            "slots": slots,
+            "local_route": route_plan,
+        })
 
-    transport = {
-        "outbound": f"{departure_city} → {destination_city}：优先高铁/飞机（按预算与时长选择）",
-        "local": "市内交通：地铁优先；景区可用网约车/公交；步行与共享单车适合短距离。",
-        "return": f"{destination_city} → {departure_city}：建议预留 2-3 小时到站/到机场时间。",
-    }
-    stay = None
-    if hots:
-        stay = hots[0]
     return {
         "departure_city": departure_city,
         "destination_city": destination_city,
         "days": d,
         "preferences": pref,
         "must_visit": must,
-        "transportation": transport,
-        "stay_suggestion": stay,
+        "data_source": "itinerary_builder",
+        "transportation": {
+            "outbound": {"from_city": departure_city, "to_city": destination_city},
+            "local": {"suggested_modes": ["metro", "ride_hail", "walk", "bike_share"]},
+            "return": {"from_city": destination_city, "to_city": departure_city},
+        },
+        "stay_suggestion": _poi_slot(hots[0]) if hots else None,
         "plan": days_out,
         "candidates": {
-            "attractions": picked_atts[: min(len(picked_atts), 12)],
-            "restaurants": picked_rests[: min(len(picked_rests), 10)],
-            "hotels": hots[: min(len(hots), 5)],
+            "attractions": [_poi_slot(a) for a in picked_atts[:12] if _poi_slot(a)],
+            "restaurants": [_poi_slot(r) for r in picked_rests[:10] if _poi_slot(r)],
+            "hotels": [_poi_slot(h) for h in hots[:5] if _poi_slot(h)],
+        },
+    }
+
+
+def build_multi_city_itinerary_from_context(
+    *,
+    departure_city: str,
+    cities: List[str],
+    dates: Optional[List[str]] = None,
+    preferences: Optional[str] = None,
+    weather_by_city_date: Optional[Dict[str, Dict[str, Any]]] = None,
+    attractions_by_city: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    hotels_by_city: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    restaurants_by_city: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+) -> Dict[str, Any]:
+    """
+    从按城市/日期分组的上游结果生成多城市结构化行程。
+    这里保持确定性，只生成可校验 JSON；自然语言润色交给聚合 LLM。
+    """
+    route = [normalize_city_name(c) for c in cities if norm_text(c)]
+    route = list(dict.fromkeys(route))
+    if not route:
+        return {
+            "error": "no_route_cities",
+            "message": "未获取到多城市路线，无法生成结构化行程。",
+            "data_source": "multi_city_itinerary_builder",
+        }
+
+    trip_dates = [str(d).strip() for d in (dates or []) if str(d).strip()]
+    if not trip_dates:
+        trip_dates = [f"day_{i + 1}" for i in range(len(route))]
+
+    weather_by_city_date = weather_by_city_date or {}
+    attractions_by_city = attractions_by_city or {}
+    hotels_by_city = hotels_by_city or {}
+    restaurants_by_city = restaurants_by_city or {}
+
+    all_attractions = [
+        a
+        for items in attractions_by_city.values()
+        for a in items
+        if isinstance(a, dict) and norm_text(a.get("name"))
+    ]
+    if not all_attractions:
+        return {
+            "error": "no_attraction_candidates",
+            "message": "未获取到可用景点 POI，无法生成多城市结构化行程。",
+            "departure_city": departure_city,
+            "cities": route,
+            "dates": trip_dates,
+            "preferences": norm_text(preferences),
+            "data_source": "multi_city_itinerary_builder",
+        }
+
+    plan: List[Dict[str, Any]] = []
+    for idx, date in enumerate(trip_dates):
+        city = route[min(idx, len(route) - 1)]
+        city_atts = [
+            a for a in attractions_by_city.get(city, [])
+            if isinstance(a, dict) and norm_text(a.get("name"))
+        ] or all_attractions
+        city_rests = [
+            r for r in restaurants_by_city.get(city, [])
+            if isinstance(r, dict) and norm_text(r.get("name"))
+        ]
+        city_hotels = [
+            h for h in hotels_by_city.get(city, [])
+            if isinstance(h, dict) and norm_text(h.get("name"))
+        ]
+
+        key = f"{departure_city}|{'-'.join(route)}|{date}|{norm_text(preferences)}"
+        picked_atts = pick_many(city_atts, min(len(city_atts), 2), key, f"atts_{idx}")
+        evening_rest = pick_many(city_rests, 1, key, f"rests_{idx}")[0] if city_rests else None
+        stay = pick_many(city_hotels, 1, key, f"hotels_{idx}")[0] if city_hotels else None
+        route_pois = [p for p in (*picked_atts, evening_rest) if isinstance(p, dict)]
+        route_plan = build_local_route_plan(route_pois)
+
+        slots = []
+        if picked_atts:
+            slots.append({"period": "morning", "category": "attraction", "poi": _poi_slot(picked_atts[0])})
+        if len(picked_atts) > 1:
+            slots.append({"period": "afternoon", "category": "attraction", "poi": _poi_slot(picked_atts[1])})
+        if evening_rest:
+            slots.append({"period": "evening", "category": "dining", "poi": _poi_slot(evening_rest)})
+
+        plan.append({
+            "day": idx + 1,
+            "date": date,
+            "city": city,
+            "weather": weather_by_city_date.get(city, {}).get(date),
+            "slots": slots,
+            "local_route": route_plan,
+            "stay_suggestion": _poi_slot(stay),
+        })
+
+    return {
+        "departure_city": departure_city,
+        "cities": route,
+        "dates": trip_dates,
+        "days": len(trip_dates),
+        "preferences": norm_text(preferences),
+        "data_source": "multi_city_itinerary_builder",
+        "transportation": {
+            "route": [{"from_city": departure_city if i == 0 else route[i - 1], "to_city": city} for i, city in enumerate(route)],
+            "local": {"suggested_modes": ["metro", "ride_hail", "walk", "bike_share"]},
+        },
+        "plan": plan,
+        "candidates": {
+            "attractions_by_city": {
+                city: [_poi_slot(a) for a in items[:8] if _poi_slot(a)]
+                for city, items in attractions_by_city.items()
+            },
+            "hotels_by_city": {
+                city: [_poi_slot(h) for h in items[:5] if _poi_slot(h)]
+                for city, items in hotels_by_city.items()
+            },
+            "restaurants_by_city": {
+                city: [_poi_slot(r) for r in items[:5] if _poi_slot(r)]
+                for city, items in restaurants_by_city.items()
+            },
         },
     }
 
@@ -893,34 +1486,246 @@ def build_itinerary_from_candidates(
 async def fetch_restaurants_from_api(location: str, *, cuisine: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
     # 如果已配置则优先使用百度 Place API，否则回退到高德。
     ensure_project_dotenv_loaded()
-    kw = norm_text(cuisine) or "美食"
+    loc = norm_text(location)
+    cuisine_kw = _normalize_restaurant_cuisine(loc, cuisine)
+    core_kw = _city_core_district_keyword(loc)
+    search_query = f"{core_kw} {cuisine_kw} 餐厅".strip()
     if norm_text(os.getenv("BAIDU_MAP_AK")):
         res = await baidu_place_v2_search(
-            query=kw,
-            region=location,
+            query=search_query,
+            region=loc,
             scope=2,
-            page_size=min(20, max(1, int(limit or 10))),
+            page_size=min(20, max(1, int(limit or 10)) * 2),
             filter_="industry_type:cater|sort_name:overall_rating|sort_rule:0",
         )
         if not res.get("error"):
             items = []
-            for it in (res.get("results") or [])[: max(1, int(limit or 10))]:
-                if isinstance(it, dict):
-                    items.append(_baidu_result_to_common_poi(it))
-            return {"restaurants": items, "data_source": "baidu_place_v2"}
+            for it in (res.get("results") or []):
+                if not isinstance(it, dict):
+                    continue
+                poi = _baidu_result_to_common_poi(it)
+                if _is_valid_restaurant_poi(poi):
+                    items.append(poi)
+                if len(items) >= max(1, int(limit or 10)):
+                    break
+            if items:
+                return {"restaurants": items, "data_source": "baidu_place_v2", "search_query": search_query}
+            return {
+                "error": "no_valid_restaurants",
+                "message": f"未找到有效餐饮 POI（query={search_query}）",
+                "restaurants": [],
+                "data_source": "baidu_place_v2",
+            }
 
     # 高德回退方案
-    kw2 = "餐厅"
-    if norm_text(cuisine):
-        kw2 = f"{norm_text(cuisine)}"
-    res2 = await amap_place_text_search(region=location, keyword=kw2, limit=limit)
+    kw2 = cuisine_kw or "餐厅"
+    res2 = await amap_place_text_search(region=loc, keyword=f"{core_kw} {kw2}", limit=limit)
     if res2.get("error"):
         return res2
     items2 = []
-    for p in (res2.get("pois") or [])[: max(1, int(limit or 10))]:
+    for p in (res2.get("pois") or []):
         if isinstance(p, dict):
-            items2.append(_poi_to_restaurant(p))
-    return {"restaurants": items2, "data_source": "amap_place_text"}
+            poi = _poi_to_restaurant(p)
+            if _is_valid_restaurant_poi(poi):
+                items2.append(poi)
+    return {"restaurants": items2[: max(1, int(limit or 10))], "data_source": "amap_place_text"}
+
+
+# 城市名 -> 主枢纽机场 IATA（无民航机场的城市映射至邻近枢纽）
+_CITY_CUISINE_MAP: Dict[str, str] = {
+    "上海": "本帮菜",
+    "苏州": "苏帮菜",
+    "杭州": "杭帮菜",
+}
+
+_CITY_CORE_DISTRICT: Dict[str, str] = {
+    "上海": "黄浦 静安",
+    "苏州": "姑苏 平江路",
+    "杭州": "西湖 上城",
+}
+
+_CITY_CORE_DISTRICT_NAMES: Dict[str, tuple] = {
+    "上海": ("黄浦", "静安", "徐汇", "长宁", "虹口", "杨浦"),
+    "苏州": ("姑苏", "吴中", "工业园"),
+    "杭州": ("上城", "拱墅", "西湖"),
+}
+
+_CITY_FAR_DISTRICT_NAMES: Dict[str, tuple] = {
+    "上海": ("崇明", "奉贤", "金山", "青浦", "嘉定", "临港", "横沙", "迪士尼"),
+    "苏州": ("太仓", "张家港", "常熟", "昆山", "吴江", "同里", "西山", "太湖", "金庭"),
+    "杭州": ("淳安", "建德", "临安", "富阳", "桐庐", "钱塘", "千岛湖", "界首", "凤坞"),
+}
+
+_SUBJECTIVE_HOTEL_PREF = re.compile(
+    r"安静|吵闹|性价比|舒适|干净|卫生|便宜|奢华|亲子|早餐|贴心|便利|方便"
+)
+
+_RESTAURANT_REJECT_NAME = frozenset({"上海市", "苏州市", "杭州市", "南宁市"})
+_RESTAURANT_REJECT_KW = ("棋牌", "足浴", "KTV", "洗浴", "养生会所", "休闲会所", "游戏场所")
+
+
+def _normalize_restaurant_cuisine(location: str, cuisine: Optional[str]) -> str:
+    loc = norm_text(location)
+    c = norm_text(cuisine) or ""
+    if any(x in c for x in ("江南", "时令", "本地", "江浙", "特色")):
+        return _CITY_CUISINE_MAP.get(loc, "江浙菜")
+    if c:
+        return c
+    return _CITY_CUISINE_MAP.get(loc, "餐厅")
+
+
+def _city_core_district_keyword(location: str) -> str:
+    loc = norm_text(location)
+    return _CITY_CORE_DISTRICT.get(loc, loc)
+
+
+def _hotel_location_text(poi: Dict[str, Any]) -> str:
+    return f"{poi.get('district') or ''} {poi.get('address') or ''}"
+
+
+def _hotel_in_far_suburb(poi: Dict[str, Any], city: str) -> bool:
+    text = _hotel_location_text(poi)
+    for far in _CITY_FAR_DISTRICT_NAMES.get(normalize_city_name(city), ()):
+        if far in text:
+            return True
+    return False
+
+
+def _hotel_in_core_district(poi: Dict[str, Any], city: str) -> bool:
+    if _hotel_in_far_suburb(poi, city):
+        return False
+    text = _hotel_location_text(poi)
+    core = _CITY_CORE_DISTRICT_NAMES.get(normalize_city_name(city), ())
+    if not core:
+        return True
+    return any(c in text for c in core)
+
+
+def build_hotel_search_query(city: str, preferences: Optional[str] = None) -> str:
+    """地图 POI 搜索词：主观偏好（安静等）映射为核心城区 + 酒店。"""
+    loc = normalize_city_name(city)
+    core = _city_core_district_keyword(loc)
+    pref = norm_text(preferences)
+    if not pref or _SUBJECTIVE_HOTEL_PREF.search(pref):
+        return f"{core} 酒店"
+    if "酒店" in pref:
+        return pref
+    return f"{core} {pref} 酒店"
+
+
+def _filter_hotels_for_city(
+    hotels: List[Dict[str, Any]],
+    city: str,
+    *,
+    strict_core: bool = True,
+) -> List[Dict[str, Any]]:
+    typed = [h for h in hotels if _is_hotel_poi(h)]
+    pool = typed or hotels
+    if strict_core:
+        core_hotels = [h for h in pool if _hotel_in_core_district(h, city)]
+        if core_hotels:
+            return core_hotels
+    return [h for h in pool if not _hotel_in_far_suburb(h, city)]
+
+
+def _is_hotel_poi(poi: Dict[str, Any]) -> bool:
+    name = norm_text(poi.get("name"))
+    if not name:
+        return False
+    reject_name = ("游泳", "培训", "大楼", "棋牌", "足浴", "美容", "美发")
+    if any(k in name for k in reject_name):
+        return False
+    typ = norm_text(poi.get("type")).lower()
+    if typ and typ not in ("hotel", ""):
+        return False
+    raw = poi.get("raw") if isinstance(poi.get("raw"), dict) else {}
+    detail = raw.get("detail_info") or {}
+    tag = norm_text(detail.get("classified_poi_tag") or detail.get("tag") or "")
+    if tag and not any(k in tag for k in ("酒店", "宾馆", "旅馆", "民宿", "客栈")):
+        return False
+    return any(k in name for k in ("酒店", "宾馆", "旅馆", "民宿", "客栈", "饭店"))
+
+
+def _is_valid_restaurant_poi(poi: Dict[str, Any]) -> bool:
+    name = norm_text(poi.get("name"))
+    if not name or len(name) < 2:
+        return False
+    if name in _RESTAURANT_REJECT_NAME:
+        return False
+    if name.endswith("市") and len(name) <= 5:
+        return False
+    typ = norm_text(poi.get("type")).lower()
+    if typ == "life":
+        return False
+    raw = poi.get("raw") or {}
+    if isinstance(raw, dict):
+        detail = raw.get("detail_info") or {}
+        tag = norm_text(detail.get("classified_poi_tag") or detail.get("tag") or "")
+        for kw in _RESTAURANT_REJECT_KW:
+            if kw in name or kw in tag:
+                return False
+    return True
+
+
+CITY_TO_IATA: Dict[str, str] = {
+    "北京": "PEK",
+    "上海": "PVG",
+    "成都": "CTU",
+    "重庆": "CKG",
+    "广州": "CAN",
+    "深圳": "SZX",
+    "杭州": "HGH",
+    "西安": "XIY",
+    "昆明": "KMG",
+    "武汉": "WUH",
+    "南京": "NKG",
+    "厦门": "XMN",
+    "青岛": "TAO",
+    "天津": "TSN",
+    "长沙": "CSX",
+    "郑州": "CGO",
+    "沈阳": "SHE",
+    "大连": "DLC",
+    "哈尔滨": "HRB",
+    "乌鲁木齐": "URC",
+    "苏州": "WUX",
+    "无锡": "WUX",
+    "宁波": "NGB",
+    "常州": "CZX",
+    "温州": "WNZ",
+    "珠海": "ZUH",
+    "三亚": "SYX",
+    "贵阳": "KWE",
+    "南宁": "NNG",
+    "福州": "FOC",
+    "济南": "TNA",
+    "合肥": "HFE",
+    "南昌": "KHN",
+    "海口": "HAK",
+    "兰州": "LHW",
+    "银川": "INC",
+    "呼和浩特": "HET",
+    "石家庄": "SJW",
+    "太原": "TYN",
+    "长春": "CGQ",
+    "泉州": "JJN",
+    "桂林": "KWL",
+}
+
+
+def _normalize_city_or_iata(value: str) -> str:
+    return norm_text(value).replace("市", "").replace("机场", "").strip()
+
+
+def resolve_city_to_iata(value: str) -> Optional[str]:
+    """将城市名或已是 IATA 的输入解析为三字码；无法解析时返回 None。"""
+    raw = _normalize_city_or_iata(value)
+    if not raw:
+        return None
+    upper = raw.upper()
+    if len(upper) == 3 and upper.isascii() and upper.isalpha():
+        return upper
+    return CITY_TO_IATA.get(raw)
 
 
 async def fetch_flights_from_api(departure: str, arrival: str, date: str, *, limit: int = 10) -> Dict[str, Any]:
@@ -937,47 +1742,14 @@ async def fetch_flights_from_api(departure: str, arrival: str, date: str, *, lim
     norm_date, derr = parse_exact_date(date)
     if derr:
         return {"error": derr}
-    def _normalize_city_or_iata(x: str) -> str:
-        return norm_text(x).replace("市", "").replace("机场", "").strip()
 
-    CITY_TO_IATA = {
-        "北京": "PEK",
-        "上海": "PVG",
-        "成都": "CTU",
-        "重庆": "CKG",
-        "广州": "CAN",
-        "深圳": "SZX",
-        "杭州": "HGH",
-        "西安": "XIY",
-        "昆明": "KMG",
-        "武汉": "WUH",
-        "南京": "NKG",
-        "厦门": "XMN",
-        "青岛": "TAO",
-        "天津": "TSN",
-        "长沙": "CSX",
-        "郑州": "CGO",
-        "沈阳": "SHE",
-        "大连": "DLC",
-        "哈尔滨": "HRB",
-        "乌鲁木齐": "URC",
-    }
-
-    dep_raw = _normalize_city_or_iata(departure)
-    arr_raw = _normalize_city_or_iata(arrival)
-    dep = dep_raw.upper()
-    arr = arr_raw.upper()
-
-    # 如果用户提供城市名，将其映射到 IATA 机场代码（尽力而为）
-    if not (len(dep) == 3 and dep.isalpha()):
-        dep = CITY_TO_IATA.get(dep_raw, "")
-    if not (len(arr) == 3 and arr.isalpha()):
-        arr = CITY_TO_IATA.get(arr_raw, "")
+    dep = resolve_city_to_iata(departure)
+    arr = resolve_city_to_iata(arrival)
 
     if not dep or not arr:
         return {
             "error": "unable_to_resolve_airport_iata",
-            "message": "请使用机场 IATA 三字码（如 PVG/PEK/CTU），或使用常见城市名（如 上海/北京/成都/广州/深圳）。",
+            "message": "请使用机场 IATA 三字码（如 PVG/PEK/CTU），或提供 CITY_TO_IATA 已收录的城市名。",
             "departure_input": departure,
             "arrival_input": arrival,
         }
@@ -1035,46 +1807,13 @@ async def fetch_flights_from_variflight_api(departure: str, arrival: str, date: 
     if derr:
         return {"error": derr}
 
-    def _normalize_city_or_iata(x: str) -> str:
-        return norm_text(x).replace("市", "").replace("机场", "").strip()
-
-    # 重用常见的中国城市名 -> 机场 IATA 映射
-    CITY_TO_IATA = {
-        "北京": "PEK",
-        "上海": "PVG",
-        "成都": "CTU",
-        "重庆": "CKG",
-        "广州": "CAN",
-        "深圳": "SZX",
-        "杭州": "HGH",
-        "西安": "XIY",
-        "昆明": "KMG",
-        "武汉": "WUH",
-        "南京": "NKG",
-        "厦门": "XMN",
-        "青岛": "TAO",
-        "天津": "TSN",
-        "长沙": "CSX",
-        "郑州": "CGO",
-        "沈阳": "SHE",
-        "大连": "DLC",
-        "哈尔滨": "HRB",
-        "乌鲁木齐": "URC",
-    }
-
-    dep_raw = _normalize_city_or_iata(departure)
-    arr_raw = _normalize_city_or_iata(arrival)
-    dep = dep_raw.upper()
-    arr = arr_raw.upper()
-    if not (len(dep) == 3 and dep.isalpha()):
-        dep = (CITY_TO_IATA.get(dep_raw) or "").upper()
-    if not (len(arr) == 3 and arr.isalpha()):
-        arr = (CITY_TO_IATA.get(arr_raw) or "").upper()
+    dep = resolve_city_to_iata(departure)
+    arr = resolve_city_to_iata(arrival)
 
     if not dep or not arr:
         return {
             "error": "unable_to_resolve_airport_iata",
-            "message": "请使用机场 IATA 三字码（如 PVG/PEK/CTU），或使用常见城市名（如 上海/北京/成都/广州/深圳）。",
+            "message": "请使用机场 IATA 三字码（如 PVG/PEK/CTU），或提供 CITY_TO_IATA 已收录的城市名。",
             "departure_input": departure,
             "arrival_input": arrival,
         }
@@ -1412,66 +2151,4 @@ async def fetch_movies_now_playing_from_api(*, limit: int = 10, language: str = 
             }
         )
     return {"movies": movies, "data_source": "tmdb_now_playing", "raw_count": len(results)}
-
-
-@dataclass
-class ItineraryDay:
-    day: int
-    morning: str
-    afternoon: str
-    evening: str
-    notes: str = ""
-
-
-def build_itinerary(
-    departure_city: str,
-    destination_city: str,
-    days: int,
-    preferences: Optional[str] = None,
-    must_visit: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    d = max(1, int(days or 1))
-    pref = norm_text(preferences)
-    must = must_visit or []
-    key = f"{departure_city}|{destination_city}|{d}|{pref}|{','.join(must)}"
-    attractions = [
-        "城市地标打卡",
-        "博物馆/展览",
-        "老街慢逛",
-        "城市公园",
-        "本地美食街",
-        "周边一日游",
-        "夜景观景点",
-    ]
-    if must:
-        attractions = must + [a for a in attractions if a not in must]
-    picks = pick_many([{"name": a} for a in attractions], n=min(7, max(3, d + 2)), *[key])
-    days_out: List[Dict[str, Any]] = []
-    for i in range(1, d + 1):
-        a1 = picks[(i - 1) % len(picks)]["name"]
-        a2 = picks[(i) % len(picks)]["name"]
-        a3 = picks[(i + 1) % len(picks)]["name"]
-        days_out.append(
-            {
-                "day": i,
-                "morning": f"{a1}（轻量行程）",
-                "afternoon": f"{a2}（根据人流调整）",
-                "evening": f"{a3} + 夜市/夜景",
-                "notes": "优先选择地铁/打车；热门景点建议提前预约。",
-            }
-        )
-    transport = {
-        "outbound": f"{departure_city} → {destination_city}：优先高铁/飞机（按预算与时长选择）",
-        "local": "市内交通：地铁优先；景区可用网约车/公交；步行与共享单车适合短距离。",
-        "return": f"{destination_city} → {departure_city}：建议预留 2-3 小时到站/到机场时间。",
-    }
-    return {
-        "departure_city": departure_city,
-        "destination_city": destination_city,
-        "days": d,
-        "preferences": pref,
-        "must_visit": must,
-        "transportation": transport,
-        "plan": days_out,
-    }
 

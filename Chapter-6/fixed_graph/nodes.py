@@ -14,14 +14,17 @@ from . import bootstrap
 bootstrap.setup()
 
 from aggregation_helpers import (
-    MEMORY_AGGREGATION_INSTRUCTION,
+    build_aggregation_prompt,
     direct_response_from_results,
     is_single_direct_response,
 )
 from central_orchestrator import SubAgentRegistry
 from memory_system import LongTermMemory
-from prompts import AGGREGATION_PROMPT
-from sub_agents import SubAgentFactory
+from sub_agents import (
+    SubAgentFactory,
+    build_sub_agent_user_message,
+    parse_sub_agent_invoke_result,
+)
 from task_planner import TaskPlanner
 
 from .state import CentralAgentState
@@ -99,41 +102,21 @@ async def _invoke_sub_agent(
     agent_name = task.get("agent", "ItineraryAgent")
     description = task.get("description", "")
 
-    query_parts = [description]
-    if task.get("params"):
-        query_parts.append(f"参数: {json.dumps(task['params'], ensure_ascii=False)}")
-    for dep_id in task.get("depends_on", []):
-        if dep_id in prior_results:
-            dep_json = json.dumps(prior_results[dep_id], ensure_ascii=False)
-            if len(dep_json) > 2000:
-                dep_json = dep_json[:2000] + "..."
-            query_parts.append(f"依赖 {dep_id} 的结果: {dep_json}")
+    user_message = build_sub_agent_user_message(task, prior_results)
 
     agent = SubAgentFactory.get_agent(agent_name)
     state = await agent.ainvoke(
-        {"messages": [("user", "\n".join(query_parts))]},
+        {"messages": [("user", user_message)]},
         {"configurable": {"thread_id": f"{thread_id}_{task_id}"}},
     )
 
-    tool_outputs = []
-    agent_text = ""
-    for msg in state.get("messages", []):
-        if hasattr(msg, "type"):
-            if msg.type == "tool" and hasattr(msg, "content"):
-                try:
-                    tool_outputs.append(json.loads(msg.content))
-                except (json.JSONDecodeError, TypeError):
-                    tool_outputs.append(msg.content)
-            elif msg.type == "ai" and getattr(msg, "content", None):
-                agent_text = msg.content
-
-    return {
-        "task_id": task_id,
-        "agent": agent_name,
-        "status": "completed",
-        "tool_data": tool_outputs[-1] if tool_outputs else None,
-        "agent_summary": agent_text,
-    }
+    result = parse_sub_agent_invoke_result(
+        state,
+        task_id=task_id,
+        agent_name=agent_name,
+    )
+    result["status"] = "completed"
+    return result
 
 
 class GraphContext:
@@ -236,9 +219,16 @@ def make_nodes(ctx: GraphContext):
         if len(tasks) == 1:
             layer_results = [await _invoke_sub_agent(tasks[0], results, thread_id)]
         else:
-            layer_results = await asyncio.gather(*[
-                _invoke_sub_agent(t, results, thread_id) for t in tasks
-            ])
+            from execution_helpers import run_task_layer
+
+            subtask_map = {t["task_id"]: t for t in tasks}
+            layer_ids = [t["task_id"] for t in tasks]
+            layer_out = await run_task_layer(
+                layer_ids,
+                subtask_map,
+                lambda tid: _invoke_sub_agent(subtask_map[tid], results, thread_id),
+            )
+            layer_results = list(layer_out.values())
 
         for res in layer_results:
             results[res["task_id"]] = res
@@ -271,26 +261,24 @@ def make_nodes(ctx: GraphContext):
         elif ctx.memory_system and state.get("enable_memory", True):
             logs = _append_log(
                 {**state, "logs": logs},
-                "  🧠 聚合时注入长期记忆上下文",
+                "  🧠 聚合使用 AGGREGATION_PROMPT + 长期/短期记忆上下文",
             )
-            prompt = ctx.memory_system.build_prompt(
-                thread_id,
-                user_query,
-                ctx.memory_system.search_memories(user_query),
+            recent_dialogue = ctx.memory_system.short_term.format_recent(thread_id)
+            prompt = build_aggregation_prompt(
+                user_query=user_query,
+                execution_plan=plan,
+                results=results,
+                recent_dialogue=recent_dialogue,
             )
-            prompt += f"\n\n## 子任务执行结果\n{json.dumps(results, ensure_ascii=False, indent=2)}"
-            prompt += f"\n\n{MEMORY_AGGREGATION_INSTRUCTION}"
             response = await ctx.llm.ainvoke([HumanMessage(content=prompt)])
             final_text = response.content or ""
             logs = _append_log({**state, "logs": logs}, "  ✓ 聚合完成")
         else:
-            logs = _append_log({**state, "logs": logs}, "  🧠 聚合未使用记忆（记忆未启用）")
-            prompt = AGGREGATION_PROMPT.format(
+            logs = _append_log({**state, "logs": logs}, "  🧠 聚合未使用短期记忆（记忆未启用）")
+            prompt = build_aggregation_prompt(
                 user_query=user_query,
-                pre_survey=json.dumps(plan.get("pre_survey", {}), ensure_ascii=False, indent=2),
-                memories=json.dumps(plan.get("retrieved_memories", []), ensure_ascii=False, indent=2),
-                total_goal=plan.get("total_goal", ""),
-                results=json.dumps(results, ensure_ascii=False, indent=2),
+                execution_plan=plan,
+                results=results,
             )
             response = await ctx.llm.ainvoke([HumanMessage(content=prompt)])
             final_text = response.content or ""

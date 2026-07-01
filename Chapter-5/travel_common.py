@@ -73,8 +73,8 @@ _DOTENV_LOADED = False
 
 
 def _project_root_dir() -> str:
-    # 项目根目录在此文件目录的上两级
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    # 书仓库根目录（Chapter-5 的上一级）
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 def ensure_project_dotenv_loaded() -> None:
@@ -92,6 +92,39 @@ def ensure_project_dotenv_loaded() -> None:
             load_dotenv(dotenv_path=dotenv_path, override=False)
     finally:
         _DOTENV_LOADED = True
+
+
+def create_llm(*, temperature: float = 0, model: Optional[str] = None) -> "ChatOpenAI":
+    """创建 DashScope / OpenAI 兼容 Chat 模型（Chapter-5 demo 共用）。
+
+    环境变量：``DASHSCOPE_API_KEY``（或 ``OPENAI_API_KEY``）、
+    ``DASHSCOPE_CHAT_MODEL``、``DASHSCOPE_CHAT_BASE_URL``、``OPENAI_SSL_VERIFY``。
+    """
+    from langchain_openai import ChatOpenAI
+
+    ensure_project_dotenv_loaded()
+    api_key = os.getenv("DASHSCOPE_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("请设置 DASHSCOPE_API_KEY 或 OPENAI_API_KEY")
+
+    base_url = os.getenv(
+        "DASHSCOPE_CHAT_BASE_URL",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    ).rstrip("/")
+    model_name = (model or os.getenv("DASHSCOPE_CHAT_MODEL") or "qwen-plus").strip()
+    ssl_verify = os.getenv("OPENAI_SSL_VERIFY", "false").lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+    return ChatOpenAI(
+        model=model_name,
+        temperature=temperature,
+        api_key=api_key,
+        base_url=base_url,
+        http_client=httpx.Client(verify=ssl_verify),
+        http_async_client=httpx.AsyncClient(verify=ssl_verify),
+    )
 
 
 async def _http_get_json(url: str, params: Dict[str, Any], headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:

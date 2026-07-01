@@ -50,12 +50,15 @@ class LongTermMemory:
         self.user_id = user_id
         self.top_k = top_k
         self.llm = llm
+        self._persist_directory = persist_directory
         self.short_term = ThreadShortTermMemory()
         self._fallback_store: List[Dict[str, Any]] = []
         self._use_chroma = False
+        self._client: Any = None
 
         try:
             import chromadb  # noqa: F401
+            from chromadb.config import Settings
             from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
             api_key = __import__("os").getenv("DASHSCOPE_API_KEY") or __import__("os").getenv("OPENAI_API_KEY")
@@ -70,7 +73,11 @@ class LongTermMemory:
                 api_base=base_url,
                 model_name=model,
             )
-            client = chromadb.PersistentClient(path=persist_directory)
+            client = chromadb.PersistentClient(
+                path=persist_directory,
+                settings=_chroma_settings(),
+            )
+            self._client = client
             self.collection = client.get_or_create_collection(
                 name=collection_name,
                 embedding_function=ef,
@@ -78,6 +85,7 @@ class LongTermMemory:
             )
             self._use_chroma = True
         except Exception:
+            self._client = None
             self.collection = None
 
     def search_memories(self, query: str, top_k: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -184,3 +192,96 @@ class LongTermMemory:
             }
             for h in hits
         ]
+
+
+def _chroma_settings() -> Any:
+    from chromadb.config import Settings
+
+    return Settings(allow_reset=True)
+
+
+def _chroma_path_key(persist_directory: str) -> str:
+    from pathlib import Path
+
+    return str(Path(persist_directory).resolve())
+
+
+def _shutdown_chroma_path(persist_directory: str) -> None:
+    """关闭本进程内该路径的 Chroma 单例（避免 Settings 冲突 / Windows 文件锁）。"""
+    from chromadb.api.shared_system_client import SharedSystemClient
+
+    identifier = _chroma_path_key(persist_directory)
+    with SharedSystemClient._refcount_lock:
+        system = SharedSystemClient._identifier_to_system.pop(identifier, None)
+        SharedSystemClient._identifier_to_refcount.pop(identifier, None)
+    if system is not None:
+        try:
+            system.stop()
+        except Exception:
+            pass
+
+
+def _clear_collection(collection: Any) -> None:
+    if collection is None:
+        return
+    try:
+        if collection.count() <= 0:
+            return
+        ids = collection.get(include=[])["ids"]
+        if ids:
+            collection.delete(ids=ids)
+    except Exception:
+        pass
+
+
+def release_memory_handles(memory: Optional["LongTermMemory"]) -> None:
+    """释放 Chroma 句柄；清空 collection 并 close client。"""
+    if memory is None:
+        return
+    persist_directory = getattr(memory, "_persist_directory", None)
+    _clear_collection(memory.collection)
+    client = getattr(memory, "_client", None)
+    if client is not None:
+        try:
+            client.reset()
+        except Exception:
+            pass
+        try:
+            client.close()
+        except Exception:
+            pass
+        memory._client = None
+    memory.collection = None
+    memory._use_chroma = False
+    memory._fallback_store.clear()
+    memory.short_term._threads.clear()
+    if persist_directory:
+        _shutdown_chroma_path(persist_directory)
+
+
+def reset_chroma_directory(
+    persist_directory: str,
+    *,
+    collection_name: str = "central_agent_memory",
+) -> None:
+    """清空持久化长期记忆（Chroma reset / 删文档，不依赖 shutil.rmtree）。"""
+    import chromadb
+
+    path_key = _chroma_path_key(persist_directory)
+    _shutdown_chroma_path(path_key)
+
+    client = chromadb.PersistentClient(path=path_key, settings=_chroma_settings())
+    try:
+        try:
+            client.reset()
+            return
+        except Exception:
+            pass
+        col = client.get_or_create_collection(collection_name)
+        _clear_collection(col)
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+        _shutdown_chroma_path(path_key)

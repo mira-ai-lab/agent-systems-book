@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -18,8 +19,9 @@ from chapter6.paths import load_project_dotenv
 load_project_dotenv()
 
 _MCP_LOCK = threading.Lock()
+_MCP_ASYNC_LOCK: Optional[asyncio.Lock] = None
+_LAST_MCP_ERROR: Optional[str] = None
 _SESSION: Optional["WeatherMcpSession"] = None
-_MCP_DISABLED = False  # npm/进程失败后本会话内跳过后续 MCP 尝试
 _REQ_ID = 0
 # Windows 默认 GBK 解码 MCP 的 UTF-8 JSON 会报错，必须显式 utf-8
 _MCP_ENCODING = "utf-8"
@@ -77,17 +79,19 @@ class WeatherMcpSession:
         env["WEATHERAPI_KEY"] = api_key
         env.setdefault("PYTHONUTF8", "1")
         cmd = _npx_command()
-        self._process = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding=_MCP_ENCODING,
-            errors="replace",
-            env=env,
-            bufsize=0,
-        )
+        popen_kwargs: Dict[str, Any] = {
+            "stdin": subprocess.PIPE,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "encoding": _MCP_ENCODING,
+            "errors": "replace",
+            "env": env,
+            "bufsize": 1,
+        }
+        if platform.system() == "Windows":
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        self._process = subprocess.Popen(cmd, **popen_kwargs)
         threading.Thread(
             target=_drain_stderr,
             args=(self._process,),
@@ -208,7 +212,6 @@ def _normalize_weather_payload(
                 "wind_kph": current.get("wind_kph"),
                 "advice": condition,
             },
-            "raw": payload,
             "data_source": "weatherapi-mcp/current",
         }
 
@@ -232,7 +235,6 @@ def _normalize_weather_payload(
             "daily_chance_of_rain": summary.get("daily_chance_of_rain"),
             "advice": condition,
         },
-        "raw": payload,
         "data_source": f"weatherapi-mcp/{tool}",
     }
 
@@ -275,23 +277,47 @@ def fetch_weather_via_mcp_sync(city: str, norm_date: str) -> Dict[str, Any]:
         raise
 
 
+def get_last_mcp_error() -> Optional[str]:
+    return _LAST_MCP_ERROR
+
+
+def _get_async_lock() -> asyncio.Lock:
+    global _MCP_ASYNC_LOCK
+    if _MCP_ASYNC_LOCK is None:
+        _MCP_ASYNC_LOCK = asyncio.Lock()
+    return _MCP_ASYNC_LOCK
+
+
 async def fetch_weather_via_mcp(city: str, norm_date: str) -> Optional[Dict[str, Any]]:
     """优先走 weatherapi-mcp；失败返回 None，由调用方回退高德/wttr.in。"""
-    global _MCP_DISABLED
-    if _MCP_DISABLED:
-        return None
+    global _LAST_MCP_ERROR
     if os.getenv("WEATHER_USE_MCP", "1").strip().lower() in ("0", "false", "no", "off"):
+        _LAST_MCP_ERROR = "WEATHER_USE_MCP disabled"
         return None
     if not (os.getenv("WEATHERAPI_KEY") or "").strip():
+        _LAST_MCP_ERROR = "WEATHERAPI_KEY not set"
         return None
-    try:
-        return await asyncio.to_thread(fetch_weather_via_mcp_sync, city, norm_date)
-    except Exception as exc:
-        _MCP_DISABLED = True
-        print(f"[weather-Mcp] 查询失败，将回退其他数据源: {exc}", flush=True)
-        with _MCP_LOCK:
-            _reset_session()
-        return None
+    async with _get_async_lock():
+        last_exc: Optional[Exception] = None
+        for attempt in range(2):
+            try:
+                result = await asyncio.to_thread(fetch_weather_via_mcp_sync, city, norm_date)
+                _LAST_MCP_ERROR = None
+                return result
+            except Exception as exc:
+                last_exc = exc
+                _LAST_MCP_ERROR = str(exc) or type(exc).__name__
+                print(
+                    f"[weather-Mcp] 查询失败(尝试 {attempt + 1}/2)，将回退其他数据源: {_LAST_MCP_ERROR}",
+                    flush=True,
+                )
+                with _MCP_LOCK:
+                    _reset_session()
+                if attempt == 0:
+                    await asyncio.sleep(0.5)
+        if last_exc and not _LAST_MCP_ERROR:
+            _LAST_MCP_ERROR = type(last_exc).__name__
+    return None
 
 
 def close_weather_mcp() -> None:

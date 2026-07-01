@@ -27,11 +27,12 @@ import bootstrap  # noqa: E402
 bootstrap.setup()
 
 from aggregation_helpers import (
+    build_aggregation_prompt,
     direct_response_from_results,
     is_single_direct_response,
 )
+from execution_helpers import run_task_layer
 from central_orchestrator import SubAgentRegistry
-from prompts import AGGREGATION_PROMPT
 from sub_agents import SubAgentFactory
 from task_planner import TaskPlanner
 from travel_common import build_trip_date_anchor_async
@@ -219,19 +220,13 @@ class PlannedPipeline:
 
         results: Dict[str, Any] = {}
         for idx, layer in enumerate(layers):
-            tasks = [subtasks[tid] for tid in layer]
-            if len(tasks) == 1:
-                layer_results = [
-                    await _invoke_sub_agent(
-                        tasks[0], results, thread_id, date_anchor
-                    )
-                ]
-            else:
-                layer_results = await asyncio.gather(*[
-                    _invoke_sub_agent(t, results, thread_id, date_anchor)
-                    for t in tasks
-                ])
-            for res in layer_results:
+            async def _invoke_tid(tid: str) -> Any:
+                return await _invoke_sub_agent(
+                    subtasks[tid], results, thread_id, date_anchor
+                )
+
+            layer_out = await run_task_layer(layer, subtasks, _invoke_tid)
+            for res in layer_out.values():
                 results[res["task_id"]] = res
 
         print("\n📝 聚合结果...", flush=True)
@@ -239,19 +234,17 @@ class PlannedPipeline:
             final_text = direct_response_from_results(results)
             print("  ✓ 单任务直达（跳过旅行规划模板）", flush=True)
         else:
-            prompt = AGGREGATION_PROMPT.format(
+            prompt = build_aggregation_prompt(
                 user_query=enriched_query,
-                pre_survey=json.dumps(plan.get("pre_survey", {}), ensure_ascii=False, indent=2),
-                memories=json.dumps(plan.get("retrieved_memories", []), ensure_ascii=False, indent=2),
-                total_goal=plan.get("total_goal", ""),
-                results=json.dumps(results, ensure_ascii=False, indent=2),
+                execution_plan=plan,
+                results=results,
             )
             prompt += (
                 f"\n\n## 日期约束（必须遵守）\n"
                 f"- 今天是 {date_anchor['today']}\n"
                 f"- 行程日期仅限: {', '.join(date_anchor['trip_dates'])}\n"
                 f"- 禁止在回复中出现 2024 等与上述不一致的年份\n"
-                f"- 若子任务未返回有效天气数据，说明无法查询并给出建议，不要编造历史气象公报\n"
+                f"- 若子任务 tool_data 未返回有效天气数据，说明无法查询并给出建议，不要编造历史气象公报\n"
             )
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
             final_text = (response.content or "").strip()
