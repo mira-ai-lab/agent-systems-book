@@ -45,7 +45,7 @@ agent-systems-book/
 | **Chapter-2** | 思维链预调查、推理链 | `reasoning_chain_of_thought.ipynb` |
 | **Chapter-3** | 文本向量、Chroma 记忆读写 | `memory.ipynb` |
 | **Chapter-4** | 任务分解、依赖图排序 | `task_decompose_demo.py` |
-| **Chapter-5** | `@tool` + LangChain 酒店 Agent | `hotel_recommendation_demo.py` |
+| **Chapter-5** | `@tool` + LangChain 酒店 Agent | `hotel_recommendation.ipynb` |
 | **Chapter-6** | 6 子智能体 + 三种编排模式 | 见下方「Chapter-6 快速开始」 |
 | **Chapter-7 A2A** | 远程 Agent 协议 + Supervisor 调度 | `A2A/supervisor_local.py` |
 | **Chapter-7 MCP** | 酒店工具 MCP Server（SSE） | `Mcp/hotel_mcp_server.py` |
