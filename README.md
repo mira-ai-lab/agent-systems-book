@@ -73,36 +73,58 @@ Chapter-6 整合了前几章能力，是全书的主线 demo；**Chapter-8** 在
 
 ### Python 与依赖
 
-推荐 Python **3.10+**，可使用 Conda 虚拟环境：
+推荐使用 **Python 3.12** 和 [uv](https://docs.astral.sh/uv/)统一管理虚拟环境与 Python 依赖。
+
+在**仓库根目录**创建一个共享的 `.venv`，供各章代码和 notebook 共同使用：
 
 ```bash
-conda create -n agent-systems-book python=3.10 -y
-conda activate agent-systems-book
+uv venv --python 3.12
 ```
 
-各章有独立 `requirements.txt`；**Chapter-6 / Chapter-8 / Chapter-11 建议可编辑安装**（后续 import 更顺畅）：
+激活虚拟环境：
+
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
 
 ```bash
-cd Chapter-6
-pip install -e .
-
-cd Chapter-8
-pip install -e .
-pip install -e ".[dev]"    # pytest
-
-cd Chapter-11
-pip install -e ".[api,dev]"
-pip install -e domains/              # 注册 travel 等域插件
-pip install -e ".[evolution]"        # 可选：TextGrad prompt 优化
+# macOS / Linux
+source .venv/bin/activate
 ```
 
-Chapter-7 A2A / MCP 另需安装对应目录下的 `requirements.txt`（含 `a2a-sdk`、`mcp` 等）。
+各章保留独立的 `requirements.txt`。阅读或运行某一章时，只需将该章依赖安装到根目录的共享环境中。例如：
+
+```bash
+uv pip install -r Chapter-2/requirements.txt
+```
+
+notebook 应选择根目录 `.venv` 对应的 Python 内核。
+
+**Chapter-6 / Chapter-8 / Chapter-11 建议使用可编辑安装**，便于直接导入章节内的 Python 包：
+
+```bash
+uv pip install -e ./Chapter-6
+
+uv pip install -e ./Chapter-8
+uv pip install -e "./Chapter-8[dev]"    # pytest
+
+uv pip install -e "./Chapter-11[api,dev]"
+uv pip install -e ./Chapter-11/domains/              # 注册 travel 等域插件
+uv pip install -e "./Chapter-11[evolution]"          # 可选：TextGrad prompt 优化
+```
+
+Chapter-7 A2A / MCP 需安装对应目录下的 `requirements.txt`（含 `a2a-sdk`、`mcp` 等），例如：
+
+```bash
+uv pip install -r Chapter-7/A2A/hotel_recommendation_agent/requirements.txt
+uv pip install -r Chapter-7/Mcp/requirements.txt
+```
 
 Chapter-9 AutoFA：
 
 ```bash
-cd Chapter-9/Automated_FA
-pip install openai python-dotenv    # 通义千问 API 模式最小依赖
+uv pip install openai python-dotenv    # 通义千问 API 模式最小依赖
 # 详见 Chapter-9/testdata/README.md
 ```
 
