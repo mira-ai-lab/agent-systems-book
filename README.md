@@ -43,7 +43,7 @@ agent-systems-book/
 | 章节 | 主题 | 典型入口 |
 |------|------|----------|
 | **Chapter-2** | 思维链预调查、推理链 | `reasoning_chain_of_thought.ipynb` |
-| **Chapter-3** | 文本向量、Chroma 记忆读写 | `memory_store_retrieve_simple.py` |
+| **Chapter-3** | 文本向量、Chroma 记忆读写 | `memory.ipynb` |
 | **Chapter-4** | 任务分解、依赖图排序 | `task_decompose_demo.py` |
 | **Chapter-5** | `@tool` + LangChain 酒店 Agent | `hotel_recommendation_demo.py` |
 | **Chapter-6** | 6 子智能体 + 三种编排模式 | 见下方「Chapter-6 快速开始」 |
@@ -188,7 +188,7 @@ cp .env.example .env
 | **Chapter-11** | `agent_framework/config.py` → `Chapter-11/.env` → 书根 `.env` |
 | **Chapter-7 A2A** | `hotel_recommendation_agent/.env` → 书根 `.env` |
 | **Chapter-9 AutoFA** | `Automated_FA/.env`（可与书根共用 Key；含 `FA_REFERENCE_DATE`） |
-| **Chapter-3 等 notebook** | 多数直接 `load_dotenv(书根/.env)` |
+| **Chapter-3 notebook** | `llm.py` → 仅加载书根 `.env`（不读取章节本地 `.env`） |
 
 #### `.env.example` 段落对照
 
