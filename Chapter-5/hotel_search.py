@@ -111,7 +111,7 @@ async def search_hotels(
     """查询指定城市的酒店候选列表。
 
     优先使用已配置的百度 Place API，失败或未配置时回退到高德 POI 搜索。
-    ``keyword`` 可包含区县、景点、地标或酒店品牌。
+    ``keyword`` 应由 Agent 提取为地图可检索的区县、景点、地标或酒店品牌。
     """
     query = norm_text(keyword) or "酒店"
     if "酒店" not in query:
