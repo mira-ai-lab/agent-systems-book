@@ -1,9 +1,11 @@
-"""记忆合并：整合语义或内容相近的用户画像记忆。
+"""Memory merging: consolidate semantically or textually similar memories.
 
-更新时间：2026-11-12
+The merger creates one consolidated memory while preserving each source
+memory's unique information. This controls memory size and reduces duplicate
+preferences and facts.
 
-合并模块在保留各自独特信息的前提下生成一条综合记忆，用于控制记忆库规模
-并减少重复偏好和重复事实。
+:author: zhanghong, liuhui
+:date: 2026-11-14
 """
 
 from __future__ import annotations
@@ -12,35 +14,28 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from llm import call_structured_llm
-
-
-def _importance(value: Any, default: float = 0.5) -> float:
-    """将模型给出的重要性值转换为浮点数，并在异常时使用默认值。"""
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
+from llm import chat
 
 
 class MemoryMerger:
-    """基于大模型的相似记忆合并器。"""
+    """Merge similar memories with an instruction-following LLM."""
 
     def __init__(self, llm: Any) -> None:
         self.llm = llm
 
     def merge(self, memories: list[dict[str, Any]]) -> dict[str, Any]:
-        """将多条相似记忆合并为一条综合记忆。
+        """Merge multiple similar memories into one consolidated memory.
 
         Args:
-            memories: 待合并的记忆列表，每项至少包含 ``id``、``content``
-                和 ``summary`` 字段。
+            memories: Memories to merge. Each item must contain at least the
+                ``id``, ``content``, and ``summary`` fields.
 
         Returns:
-            合并后的结构化记忆；模型不可用时返回第一条记忆的降级副本。
+            The merged structured memory. If the model is unavailable, a
+            fallback copy of the first memory is returned.
         """
         if not memories:
-            raise ValueError("至少需要一条记忆才能执行合并")
+            raise ValueError("At least one memory is required for merging")
 
         memories_text = "\n\n".join(
             f"记忆{index + 1}:\n{memory['content']}"
@@ -57,7 +52,7 @@ class MemoryMerger:
         }}"""
 
         try:
-            merged = call_structured_llm(self.llm, prompt)
+            merged = chat(self.llm, prompt)
         except Exception:
             base = memories[0]
             return {
@@ -76,7 +71,7 @@ class MemoryMerger:
             "content": "\n".join(key_points) if key_points else memories_text,
             "summary": str(merged.get("summary", memories[0].get("summary", ""))),
             "key_points": key_points,
-            "importance": _importance(merged.get("importance")),
+            "importance": float(merged.get("importance", 0.5)),
             "timestamp": datetime.now().isoformat(),
             "metadata": {"merged_from": [memory["id"] for memory in memories]},
             "is_merged": True,

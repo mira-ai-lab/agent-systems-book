@@ -1,14 +1,17 @@
-"""记忆存储：管理 Chroma 持久化、去重和写入流程。
+"""Long-term memory storage backed by the Chroma vector database.
 
-更新时间：2026-11-12
+Chroma ``PersistentClient`` stores documents, metadata, and identifiers in a
+persistent collection. Embeddings use DashScope ``text-embedding-v3`` by
+default, or ``text-embedding-3-small`` when OpenAI embeddings are selected.
+The ingestion pipeline extracts structured memories, detects near-duplicates
+by vector similarity, merges them when needed, and updates the local cache.
 
-存储模块接收已经抽取的结构化记忆，根据相似度判断是否与已有记忆重复，
-必要时调用合并模块，并同步维护内存中的文档、元数据和标识缓存。
+:author: zhanghong, liuhui
+:date: 2026-11-14
 """
 
 from __future__ import annotations
 
-import asyncio
 import gc
 import json
 import os
@@ -28,7 +31,7 @@ from memory_merge import MemoryMerger
 
 @dataclass(frozen=True)
 class MemoryStoreConfig:
-    """控制重复检测和合并行为的配置。"""
+    """Configuration for duplicate detection and merging."""
 
     dedupe_similarity_threshold: float = 0.82
     merge_on_duplicate: bool = True
@@ -38,7 +41,7 @@ _STORE_STATE: dict[str, Any] = {}
 
 
 class MemoryStore:
-    """Chroma 长期记忆存储及其写入管道。"""
+    """Chroma-backed long-term memory store and ingestion pipeline."""
 
     def __init__(
         self,
@@ -72,17 +75,15 @@ class MemoryStore:
         self.ids: list[str] = []
         self._sync_index_state()
 
-        self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        self._worker_task: asyncio.Task[None] | None = None
-
     def _create_embedding_function(self, model_type: str):
-        """根据模型类型创建 Chroma 所需的在线嵌入函数。"""
+        """Create the online embedding function required by Chroma."""
         kind = (model_type or "dashscope").strip().lower()
         if kind in ("dashscope", "qwen", "aliyun", "阿里云"):
             api_key = (os.getenv("DASHSCOPE_API_KEY") or "").strip()
             if not api_key:
                 raise ValueError(
-                    "使用阿里云嵌入请在项目根目录 .env 中设置 DASHSCOPE_API_KEY"
+                    "Set DASHSCOPE_API_KEY in the project-level .env file to "
+                    "use DashScope embeddings"
                 )
             model = os.getenv("DASHSCOPE_EMBEDDING_MODEL", "text-embedding-v3")
             base_url = os.getenv(
@@ -105,35 +106,32 @@ class MemoryStore:
             )
 
         raise ValueError(
-            f"不支持的 embedding_model={model_type!r}，请使用 dashscope 或 openai"
+            f"Unsupported embedding_model={model_type!r}; "
+            "use 'dashscope' or 'openai'"
         )
 
     @staticmethod
     def distance_to_similarity(distance: float) -> float:
-        """将 Chroma 距离转换为 [0, 1] 范围内的相似度。"""
+        """Convert a Chroma distance to a similarity in the range [0, 1]."""
         return max(0.0, min(1.0, 1.0 - float(distance) / 2.0))
 
     def _sync_index_state(self) -> None:
-        """从 Chroma 重新读取文档和元数据缓存。"""
+        """Reload cached documents, metadata, and identifiers from Chroma."""
         data = self.collection.get()
         self.documents = data.get("documents") or []
         self.metadatas = data.get("metadatas") or []
         self.ids = data.get("ids") or []
-
-    def count(self) -> int:
-        """返回当前集合中的记忆数量。"""
-        return self.collection.count()
 
     def get_user_records(
         self,
         user_id: str,
         memory_types: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """返回指定用户的记忆记录。
+        """Return memory records for a specific user.
 
         Args:
-            user_id: 用户标识。
-            memory_types: 可选的记忆类型过滤器。
+            user_id: User identifier.
+            memory_types: Optional memory-type filter.
         """
         records: list[dict[str, Any]] = []
         allowed_types = set(memory_types or [])
@@ -157,7 +155,7 @@ class MemoryStore:
         return records
 
     def _find_duplicate(self, summary: str) -> str | None:
-        """查找当前用户下与摘要最相似且超过阈值的已有记忆。"""
+        """Find the current user's most similar memory above the threshold."""
         if self.collection.count() == 0:
             return None
         hits = self.collection.query(
@@ -184,16 +182,17 @@ class MemoryStore:
         importance: float | None = None,
         extra_metadata: dict[str, Any] | None = None,
     ) -> str:
-        """写入一条已抽取的记忆，并在需要时合并到已有记忆。
+        """Write an extracted memory and merge it with an existing duplicate.
 
         Args:
-            extracted: ``MemoryExtractor.extract`` 返回的结构化记忆。
-            memory_type: 记忆类型，例如 ``preference`` 或 ``fact``。
-            importance: 显式重要性；未提供时使用抽取结果中的值。
-            extra_metadata: 需要写入 Chroma 的附加元数据。
+            extracted: Structured memory returned by
+                ``MemoryExtractor.extract``.
+            memory_type: Memory type, such as ``preference`` or ``fact``.
+            importance: Explicit importance. Defaults to the extraction value.
+            extra_metadata: Additional metadata to persist in Chroma.
 
         Returns:
-            新增或更新后的记忆标识。
+            Identifier of the newly added or updated memory.
         """
         resolved_importance = float(
             importance
@@ -256,7 +255,7 @@ class MemoryStore:
         importance: float,
         extra: dict[str, Any],
     ) -> dict[str, Any]:
-        """构造 Chroma 可持久化的扁平元数据。"""
+        """Build flat, Chroma-compatible metadata for persistence."""
         return {
             "user_id": extra.get("user_id", ""),
             "memory_type": memory_type,
@@ -276,7 +275,7 @@ class MemoryStore:
         importance: float | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> str:
-        """抽取并写入一条长期记忆。"""
+        """Extract and persist one long-term memory."""
         extra_metadata = {"user_id": self.user_id, **(metadata or {})}
         extracted = self.extractor.extract(content, metadata=extra_metadata)
         return self.add(
@@ -286,39 +285,8 @@ class MemoryStore:
             extra_metadata=extra_metadata,
         )
 
-    async def ingest_long_term_async(self, content: str, **kwargs: Any) -> str:
-        """在线程池中执行同步写入，避免阻塞异步事件循环。"""
-        return await asyncio.to_thread(self.ingest_long_term, content, **kwargs)
-
-    async def enqueue(self, item: dict[str, Any]) -> None:
-        """将一条待写入记忆放入后台队列。"""
-        await self._queue.put(item)
-
-    async def _worker(self) -> None:
-        """持续消费后台写入队列，直到收到停止标记。"""
-        while True:
-            item = await self._queue.get()
-            try:
-                if item.get("__stop__"):
-                    break
-                await self.ingest_long_term_async(**item)
-            finally:
-                self._queue.task_done()
-
-    def start_background_worker(self) -> None:
-        """启动后台写入任务；已有运行中的任务时不会重复启动。"""
-        if self._worker_task is None or self._worker_task.done():
-            self._worker_task = asyncio.create_task(self._worker())
-
-    async def stop_background_worker(self) -> None:
-        """等待队列清空后停止后台写入任务。"""
-        if self._worker_task:
-            await self._queue.put({"__stop__": True})
-            await self._worker_task
-            self._queue.join()
-
     def clear_all_memories(self) -> None:
-        """删除当前集合中的全部记忆并清空本地缓存。"""
+        """Delete every memory in the collection and clear local caches."""
         data = self.collection.get()
         ids = data.get("ids") or []
         if ids:
@@ -328,7 +296,7 @@ class MemoryStore:
         self.ids = []
 
     def close(self) -> None:
-        """释放 Chroma 客户端引用，便于 Windows 回收持久化目录。"""
+        """Release Chroma references so Windows can release the data directory."""
         client = self.client
         self.collection = None
         self.client = None
@@ -338,7 +306,7 @@ class MemoryStore:
 
 
 def close_memory_store(store: MemoryStore | None = None) -> None:
-    """关闭记忆存储并清理 Notebook 会话中的全局引用。"""
+    """Close the memory store and clear its notebook-session references."""
     target = store if store is not None else _STORE_STATE.get("store")
     if target is not None:
         target.close()
@@ -350,10 +318,11 @@ def close_memory_store(store: MemoryStore | None = None) -> None:
 
 
 def reset_chroma_directory(path: Path, store: MemoryStore | None = None) -> bool:
-    """尝试删除 Chroma 持久化目录。
+    """Try to delete the Chroma persistence directory.
 
-    Windows 在文件句柄未释放时可能拒绝删除。该函数通过重试降低失败概率，
-    返回 ``False`` 时调用方可以改用清空集合的方式继续演示。
+    Windows may reject deletion while file handles remain open. This function
+    retries to reduce failures. When it returns ``False``, callers can clear
+    the collection instead and continue.
     """
     close_memory_store(store)
     if not path.exists():
@@ -365,7 +334,8 @@ def reset_chroma_directory(path: Path, store: MemoryStore | None = None) -> bool
         except PermissionError:
             time.sleep(0.5)
     print(
-        f"未能删除目录 {path}，将复用存储实例并清空集合，不影响课堂演示。"
+        f"Could not delete {path}; reusing the store and clearing the "
+        "collection instead."
     )
     return False
 
@@ -380,10 +350,11 @@ def get_or_reset_store(
     force_rebuild_directory: bool = False,
     **kwargs: Any,
 ) -> MemoryStore:
-    """获取可复用的 Notebook 记忆存储，并按需清空或重建。
+    """Return a reusable notebook memory store, clearing or rebuilding as needed.
 
-    Notebook 重复执行时优先复用同一实例并清空集合，以降低 Windows 上
-    Chroma 持久化目录被占用而无法删除的风险。
+    Repeated notebook runs reuse the same instance and clear its collection
+    when possible. This avoids Windows failures caused by a locked Chroma
+    persistence directory.
     """
     path = Path(persist_directory)
     key = (str(path.resolve()), collection_name, user_id)
@@ -400,7 +371,7 @@ def get_or_reset_store(
         existing.extractor = extractor
         existing.merger = merger
         existing.clear_all_memories()
-        print("已复用记忆存储，并清空当前集合。")
+        print("Reused the memory store and cleared the current collection.")
         return existing
 
     if isinstance(existing, MemoryStore):
