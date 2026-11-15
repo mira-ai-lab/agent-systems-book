@@ -1,9 +1,11 @@
-"""Chapter-5 酒店搜索与结果标准化。
+"""Hotel search and result normalization for Chapter 5.
 
-更新时间：2026-11-13
+This module builds the hotel-domain layer on top of raw map POI searches. It
+owns search keyword construction, Baidu and Amap result conversion, and hotel
+candidate queries.
 
-本模块在地图 POI 搜索之上提供酒店领域能力，包括搜索词构造、百度/高德结果
-转换和酒店候选查询。
+:author: zhanghong, liuhui
+:date: 2026-11-15
 """
 
 from __future__ import annotations
@@ -11,18 +13,43 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Optional, Tuple
 
-from map_api import amap_place_text_search, baidu_place_v2_search, norm_text
+from pydantic import BaseModel, Field
+
+from map_api import amap_place_text_search, baidu_place_v2_search
+
+
+class Hotel(BaseModel):
+    """Unified hotel fields returned by any map provider."""
+
+    name: str = Field(..., min_length=1, description="Hotel name")
+    district: str | None = None
+    address: str | None = None
+    tel: str | None = None
+    location: str | None = None
+    rating: float | None = None
+    avg_price_cny: float | None = None
+    type: str | None = None
+
+
+class HotelSearchResult(BaseModel):
+    """Normalized hotel search response returned to upper layers."""
+
+    hotels: list[Hotel]
+    data_source: str
+    search_query: str | None = None
+    error: str | None = None
+    message: str | None = None
 
 
 def require_non_empty(value: Optional[str], field: str) -> Tuple[bool, str]:
-    """校验必填文本字段，并返回校验状态和错误信息。"""
-    if norm_text(value):
+    """Return whether a required text field is non-empty."""
+    if (value or "").strip():
         return True, ""
     return False, f"{field} is required."
 
 
-def _normalize_baidu_hotel(item: Dict[str, Any]) -> Dict[str, Any]:
-    """将百度 Place API 结果转换为统一酒店字段。"""
+def _normalize_baidu_hotel(item: Dict[str, Any]) -> Hotel:
+    """Convert a Baidu Place API result into a unified ``Hotel`` model."""
     location = item.get("location") or {}
     latitude = location.get("lat")
     longitude = location.get("lng")
@@ -51,26 +78,25 @@ def _normalize_baidu_hotel(item: Dict[str, Any]) -> Dict[str, Any]:
     location_text = None
     if longitude is not None and latitude is not None:
         location_text = f"{longitude},{latitude}"
-    return {
-        "name": item.get("name"),
-        "district": item.get("area") or item.get("city") or item.get("address"),
-        "address": item.get("address"),
-        "tel": item.get("telephone"),
-        "location": location_text,
-        "rating": rating,
-        "avg_price_cny": avg_price,
-        "type": (
+    return Hotel(
+        name=item.get("name") or "",
+        district=item.get("area") or item.get("city") or item.get("address"),
+        address=item.get("address"),
+        tel=item.get("telephone"),
+        location=location_text,
+        rating=float(rating) if rating is not None else None,
+        avg_price_cny=float(avg_price) if avg_price is not None else None,
+        type=(
             detail.get("type")
             or item.get("tag")
             or detail.get("tag")
             or item.get("type")
         ),
-        "raw": item,
-    }
+    )
 
 
-def _normalize_amap_hotel(poi: Dict[str, Any]) -> Dict[str, Any]:
-    """将高德 POI 结果转换为统一酒店字段。"""
+def _normalize_amap_hotel(poi: Dict[str, Any]) -> Hotel:
+    """Convert an Amap POI result into a unified ``Hotel`` model."""
     business = poi.get("business") or {}
     rating_value = business.get("rating")
     cost_value = business.get("cost")
@@ -90,16 +116,16 @@ def _normalize_amap_hotel(poi: Dict[str, Any]) -> Dict[str, Any]:
         )
     except (TypeError, ValueError):
         avg_price = None
-    return {
-        "name": poi.get("name"),
-        "district": poi.get("adname") or poi.get("address"),
-        "address": poi.get("address"),
-        "tel": poi.get("tel"),
-        "location": poi.get("location"),
-        "rating": rating,
-        "avg_price_cny": avg_price,
-        "type": poi.get("type"),
-    }
+    return Hotel(
+        name=poi.get("name") or "",
+        district=poi.get("adname") or poi.get("address"),
+        address=poi.get("address"),
+        tel=poi.get("tel"),
+        location=poi.get("location"),
+        rating=float(rating) if rating is not None else None,
+        avg_price_cny=float(avg_price) if avg_price is not None else None,
+        type=poi.get("type"),
+    )
 
 
 async def search_hotels(
@@ -107,18 +133,42 @@ async def search_hotels(
     *,
     limit: int = 10,
     keyword: Optional[str] = None,
-) -> Dict[str, Any]:
-    """查询指定城市的酒店候选列表。
+) -> HotelSearchResult:
+    """Query a hotel candidate list for a target city.
 
-    优先使用已配置的百度 Place API，失败或未配置时回退到高德 POI 搜索。
-    ``keyword`` 应由 Agent 提取为地图可检索的区县、景点、地标或酒店品牌。
+    The provider is selected from the configured map keys. Baidu is preferred
+    when both keys are present; otherwise the single configured provider is
+    used. If neither ``AMAP_KEY`` nor ``BAIDU_MAP_AK`` is configured, an error
+    is returned. The ``keyword`` argument should be a map-searchable district,
+    landmark, street, or hotel brand extracted by the agent.
+
+    Args:
+        city: Target city or region.
+        limit: Maximum number of candidates to return.
+        keyword: Optional map-searchable keyword for the hotel query.
+
+    Returns:
+        A ``HotelSearchResult`` containing normalized hotels, the active data
+        source, and an optional error description.
     """
-    query = norm_text(keyword) or "酒店"
+    query = (keyword or "").strip() or "酒店"
     if "酒店" not in query:
         query = f"{query} 酒店"
     page_size = max(1, min(int(limit or 10), 20))
 
-    if norm_text(os.getenv("BAIDU_MAP_AK")):
+    baidu_key = (os.getenv("BAIDU_MAP_AK") or "").strip()
+    amap_key = (os.getenv("AMAP_KEY") or "").strip()
+
+    if not baidu_key and not amap_key:
+        return HotelSearchResult(
+            hotels=[],
+            data_source="none",
+            search_query=query,
+            error="map_key_missing",
+            message="Configure AMAP_KEY or BAIDU_MAP_AK in the project .env file.",
+        )
+
+    if baidu_key:
         baidu_result = await baidu_place_v2_search(
             query=query,
             region=city,
@@ -132,11 +182,19 @@ async def search_hotels(
                 for item in (baidu_result.get("results") or [])[:page_size]
                 if isinstance(item, dict)
             ]
-            return {
-                "hotels": hotels,
-                "data_source": "baidu_place_v2",
-                "search_query": query,
-            }
+            return HotelSearchResult(
+                hotels=hotels,
+                data_source="baidu_place_v2",
+                search_query=query,
+            )
+        if not amap_key:
+            return HotelSearchResult(
+                hotels=[],
+                data_source="baidu_place_v2",
+                search_query=query,
+                error=baidu_result.get("error"),
+                message=baidu_result.get("message"),
+            )
 
     amap_result = await amap_place_text_search(
         region=city,
@@ -144,14 +202,20 @@ async def search_hotels(
         limit=limit,
     )
     if amap_result.get("error"):
-        return amap_result
+        return HotelSearchResult(
+            hotels=[],
+            data_source="amap_place_text",
+            search_query=query,
+            error=amap_result.get("error"),
+            message=amap_result.get("message"),
+        )
     hotels = [
         _normalize_amap_hotel(poi)
         for poi in (amap_result.get("pois") or [])[:page_size]
         if isinstance(poi, dict)
     ]
-    return {
-        "hotels": hotels,
-        "data_source": "amap_place_text",
-        "search_query": query,
-    }
+    return HotelSearchResult(
+        hotels=hotels,
+        data_source="amap_place_text",
+        search_query=query,
+    )

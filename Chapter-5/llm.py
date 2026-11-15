@@ -1,8 +1,10 @@
-"""Chapter-5 模型客户端。
+"""Model client for Chapter 5.
 
-更新时间：2026-11-13
+This module loads model-related environment variables and creates the chat
+model used by the hotel recommendation agent.
 
-本模块负责加载模型相关环境变量并创建对话模型。
+:author: zhanghong, liuhui
+:date: 2026-11-15
 """
 
 from __future__ import annotations
@@ -23,11 +25,20 @@ def create_llm(
     temperature: float = 0,
     model: str | None = None,
 ):
-    """创建 DashScope 或 OpenAI 兼容的对话模型。
+    """Create a DashScope- or OpenAI-compatible chat model.
+
+    The model is loaded from the project-level environment configuration.
+    OpenAI is used when ``OPENAI_API_KEY`` is configured. When it is absent
+    and ``DASHSCOPE_API_KEY`` is available, the function falls back to the
+    OpenAI-compatible DashScope endpoint.
 
     Args:
-        temperature: 模型采样温度。
-        model: 显式指定的模型名称；未提供时从环境变量读取。
+        temperature: Model sampling temperature.
+        model: Explicit model name. When omitted, the name is read from the
+            environment.
+
+    Returns:
+        A configured LangChain ``ChatOpenAI`` instance.
     """
     from langchain_openai import ChatOpenAI
 
@@ -43,7 +54,7 @@ def create_llm(
         "model": (
             model
             or (
-                os.getenv("DASHSCOPE_CHAT_MODEL", "qwen-plus")
+                os.getenv("DASHSCOPE_CHAT_MODEL", "qwen3.7-plus")
                 if use_dashscope
                 else os.getenv("OPENAI_MODEL", "gpt-4o-mini")
             )
