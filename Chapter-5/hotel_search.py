@@ -1,21 +1,26 @@
 """Hotel search and result normalization for Chapter 5.
 
-This module builds the hotel-domain layer on top of raw map POI searches. It
-owns search keyword construction, Baidu and Amap result conversion, and hotel
-candidate queries.
+This module builds the hotel-domain layer on top of raw map POI searches and
+generic POI normalization. It owns search keyword construction, hotel model
+adaptation, and candidate queries.
 
 :author: zhanghong, liuhui
-:date: 2026-11-15
+:date: 2026-11-16
 """
 
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
 
-from map_api import amap_place_text_search, baidu_place_v2_search
+from map_api import (
+    amap_place_text_search,
+    baidu_place_v2_search,
+    normalize_amap_poi,
+    normalize_baidu_poi,
+)
 
 
 class Hotel(BaseModel):
@@ -41,89 +46,48 @@ class HotelSearchResult(BaseModel):
     message: str | None = None
 
 
-def require_non_empty(value: Optional[str], field: str) -> Tuple[bool, str]:
-    """Return whether a required text field is non-empty."""
-    if (value or "").strip():
-        return True, ""
-    return False, f"{field} is required."
+_HOTEL_REJECT_KEYWORDS = (
+    "游泳",
+    "培训",
+    "大楼",
+    "棋牌",
+    "足浴",
+    "美容",
+    "美发",
+    "小区",
+    "公寓",
+)
 
 
-def _normalize_baidu_hotel(item: Dict[str, Any]) -> Hotel:
-    """Convert a Baidu Place API result into a unified ``Hotel`` model."""
-    location = item.get("location") or {}
-    latitude = location.get("lat")
-    longitude = location.get("lng")
-    detail = item.get("detail_info") or {}
+def is_valid_hotel_poi(poi: Dict[str, Any]) -> bool:
+    """Return whether a normalized candidate is a usable hotel POI.
 
-    rating_value = detail.get("overall_rating")
-    try:
-        rating = (
-            float(rating_value)
-            if rating_value is not None and str(rating_value).strip()
-            else None
-        )
-    except (TypeError, ValueError):
-        rating = None
+    Args:
+        poi: Hotel-shaped dictionary returned by a map provider.
 
-    price = detail.get("price")
-    try:
-        avg_price = (
-            int(float(str(price).replace("￥", "").replace("元", "").strip()))
-            if price is not None and str(price).strip()
-            else None
-        )
-    except (TypeError, ValueError):
-        avg_price = None
-
-    location_text = None
-    if longitude is not None and latitude is not None:
-        location_text = f"{longitude},{latitude}"
-    return Hotel(
-        name=item.get("name") or "",
-        district=item.get("area") or item.get("city") or item.get("address"),
-        address=item.get("address"),
-        tel=item.get("telephone"),
-        location=location_text,
-        rating=float(rating) if rating is not None else None,
-        avg_price_cny=float(avg_price) if avg_price is not None else None,
-        type=(
-            detail.get("type")
-            or item.get("tag")
-            or detail.get("tag")
-            or item.get("type")
-        ),
-    )
+    Returns:
+        ``True`` when the candidate has a plausible name and location.
+    """
+    name = (poi.get("name") or "").strip()
+    if len(name) < 2:
+        return False
+    if any(keyword in name for keyword in _HOTEL_REJECT_KEYWORDS):
+        return False
+    if name.endswith("市") and not (poi.get("address") or poi.get("district")):
+        return False
+    return bool(poi.get("address") or poi.get("district") or poi.get("location"))
 
 
-def _normalize_amap_hotel(poi: Dict[str, Any]) -> Hotel:
-    """Convert an Amap POI result into a unified ``Hotel`` model."""
-    business = poi.get("business") or {}
-    rating_value = business.get("rating")
-    cost_value = business.get("cost")
-    try:
-        rating = (
-            float(rating_value)
-            if rating_value is not None and str(rating_value).strip()
-            else None
-        )
-    except (TypeError, ValueError):
-        rating = None
-    try:
-        avg_price = (
-            int(float(cost_value))
-            if cost_value is not None and str(cost_value).strip()
-            else None
-        )
-    except (TypeError, ValueError):
-        avg_price = None
+def _to_hotel(poi: Dict[str, Any]) -> Hotel:
+    """Convert a generic normalized POI into a ``Hotel`` model."""
     return Hotel(
         name=poi.get("name") or "",
-        district=poi.get("adname") or poi.get("address"),
+        district=poi.get("district"),
         address=poi.get("address"),
         tel=poi.get("tel"),
         location=poi.get("location"),
-        rating=float(rating) if rating is not None else None,
-        avg_price_cny=float(avg_price) if avg_price is not None else None,
+        rating=poi.get("rating"),
+        avg_price_cny=poi.get("avg_price_cny"),
         type=poi.get("type"),
     )
 
@@ -178,7 +142,7 @@ async def search_hotels(
         )
         if not baidu_result.get("error"):
             hotels = [
-                _normalize_baidu_hotel(item)
+                _to_hotel(normalize_baidu_poi(item))
                 for item in (baidu_result.get("results") or [])[:page_size]
                 if isinstance(item, dict)
             ]
@@ -210,7 +174,7 @@ async def search_hotels(
             message=amap_result.get("message"),
         )
     hotels = [
-        _normalize_amap_hotel(poi)
+        _to_hotel(normalize_amap_poi(poi))
         for poi in (amap_result.get("pois") or [])[:page_size]
         if isinstance(poi, dict)
     ]

@@ -5,12 +5,14 @@ parsing of raw responses. It does not contain hotel search keywords, hotel
 recommendation, or agent logic.
 
 :author: zhanghong, liuhui
-:date: 2026-11-15
+:date: 2026-11-16
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import math
 import os
 import time
 import urllib.parse
@@ -22,8 +24,122 @@ from dotenv import load_dotenv
 
 
 _HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+_BAIDU_API_LOCK = asyncio.Lock()
 _ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(_ENV_FILE)
+
+
+def normalize_city_name(city: Optional[str]) -> str:
+    """Remove a trailing ``市`` so map regions use the short city name."""
+    normalized = (city or "").strip()
+    if normalized.endswith("市") and len(normalized) > 1:
+        return normalized[:-1]
+    return normalized
+
+
+def require_non_empty(value: Optional[str], field: str) -> Tuple[bool, str]:
+    """Return whether a required text field contains a non-empty value."""
+    if (value or "").strip():
+        return True, ""
+    return False, f"{field} is required."
+
+
+def normalize_baidu_poi(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert one Baidu Place result into a common POI dictionary.
+
+    Args:
+        item: A raw Baidu Place API result.
+
+    Returns:
+        A dictionary with common name, address, coordinate, rating, and price
+        fields while retaining the original provider payload under ``raw``.
+    """
+    location = item.get("location") or {}
+    latitude = location.get("lat")
+    longitude = location.get("lng")
+    detail = item.get("detail_info") or {}
+
+    raw_rating = detail.get("overall_rating")
+    try:
+        rating = (
+            float(raw_rating)
+            if raw_rating is not None and str(raw_rating).strip()
+            else None
+        )
+    except (TypeError, ValueError):
+        rating = None
+
+    raw_price = detail.get("price")
+    try:
+        avg_price = (
+            int(float(str(raw_price).replace("￥", "").replace("元", "").strip()))
+            if raw_price is not None and str(raw_price).strip()
+            else None
+        )
+    except (TypeError, ValueError):
+        avg_price = None
+
+    location_text = None
+    if longitude is not None and latitude is not None:
+        location_text = f"{longitude},{latitude}"
+    return {
+        "name": item.get("name"),
+        "district": item.get("area") or item.get("city") or item.get("address"),
+        "address": item.get("address"),
+        "tel": item.get("telephone"),
+        "location": location_text,
+        "rating": rating,
+        "avg_price_cny": avg_price,
+        "type": (
+            detail.get("type")
+            or item.get("tag")
+            or detail.get("tag")
+            or item.get("type")
+        ),
+        "raw": item,
+    }
+
+
+def normalize_amap_poi(poi: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert one Amap POI into a common POI dictionary.
+
+    Args:
+        poi: A raw Amap POI dictionary.
+
+    Returns:
+        A dictionary with common location, rating, price, type, and cuisine
+        fields. ``cuisine`` mirrors the provider type for restaurant use.
+    """
+    business = poi.get("business") or {}
+    raw_rating = business.get("rating")
+    raw_cost = business.get("cost")
+    try:
+        rating = (
+            float(raw_rating)
+            if raw_rating is not None and str(raw_rating).strip()
+            else None
+        )
+    except (TypeError, ValueError):
+        rating = None
+    try:
+        avg_price = (
+            int(float(raw_cost))
+            if raw_cost is not None and str(raw_cost).strip()
+            else None
+        )
+    except (TypeError, ValueError):
+        avg_price = None
+    return {
+        "name": poi.get("name"),
+        "district": poi.get("adname") or poi.get("address"),
+        "address": poi.get("address"),
+        "tel": poi.get("tel"),
+        "location": poi.get("location"),
+        "rating": rating,
+        "avg_price_cny": avg_price,
+        "type": poi.get("type"),
+        "cuisine": poi.get("type"),
+    }
 
 
 async def _http_get_json(
@@ -226,3 +342,200 @@ async def baidu_place_v2_search(
     if not isinstance(results, list):
         return {"error": "invalid_baidu_results", "raw": data}
     return {"results": results, "raw": data}
+
+
+def parse_lng_lat(location: Any) -> tuple[float, float] | None:
+    """Parse common ``lng,lat`` map coordinates.
+
+    Args:
+        location: Coordinate string or dictionary returned by a map provider.
+
+    Returns:
+        A ``(longitude, latitude)`` tuple, or ``None`` for invalid input.
+    """
+    if not location:
+        return None
+    if isinstance(location, dict):
+        longitude = (
+            location.get("lng")
+            or location.get("lon")
+            or location.get("longitude")
+        )
+        latitude = location.get("lat") or location.get("latitude")
+    else:
+        parts = str(location).split(",")
+        if len(parts) != 2:
+            return None
+        longitude, latitude = parts
+    if longitude is None or latitude is None:
+        return None
+    try:
+        return float(str(longitude).strip()), float(str(latitude).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def haversine_m(
+    origin: tuple[float, float],
+    destination: tuple[float, float],
+) -> int:
+    """Estimate straight-line distance in metres between two coordinates."""
+    longitude_1, latitude_1 = origin
+    longitude_2, latitude_2 = destination
+    radius_m = 6_371_000
+    phi_1 = math.radians(latitude_1)
+    phi_2 = math.radians(latitude_2)
+    delta_phi = math.radians(latitude_2 - latitude_1)
+    delta_lambda = math.radians(longitude_2 - longitude_1)
+    haversine = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi_1)
+        * math.cos(phi_2)
+        * math.sin(delta_lambda / 2) ** 2
+    )
+    return int(
+        2
+        * radius_m
+        * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine))
+    )
+
+
+def select_baidu_direction_mode(distance_m: int) -> str:
+    """Choose a Baidu Direction API mode based on route distance."""
+    if distance_m <= 1200:
+        return "walking"
+    if distance_m <= 5000:
+        return "riding"
+    if distance_m <= 30000:
+        return "transit"
+    return "driving"
+
+
+def _extract_baidu_route_summary(
+    data: Dict[str, Any],
+    mode: str,
+) -> Dict[str, Any]:
+    """Extract distance, duration, and step count from a route response."""
+    result = data.get("result") if isinstance(data, dict) else None
+    if not isinstance(result, dict):
+        return {"error": "invalid_baidu_direction_result"}
+
+    routes = result.get("routes")
+    if not isinstance(routes, list) or not routes:
+        routes = result.get("routes_list") or []
+    route = routes[0] if routes and isinstance(routes[0], dict) else {}
+    if mode == "transit" and isinstance(route.get("scheme"), list):
+        scheme = route["scheme"][0] if route["scheme"] else None
+        if isinstance(scheme, dict):
+            route = scheme
+
+    raw_distance = route.get("distance") or route.get("distance_m")
+    raw_duration = route.get("duration") or route.get("duration_s")
+    try:
+        distance_m = (
+            int(float(raw_distance))
+            if raw_distance is not None
+            else None
+        )
+    except (TypeError, ValueError):
+        distance_m = None
+    try:
+        duration_min = (
+            int(round(float(raw_duration) / 60))
+            if raw_duration is not None
+            else None
+        )
+    except (TypeError, ValueError):
+        duration_min = None
+    steps = route.get("steps")
+    return {
+        "distance_m": distance_m,
+        "duration_min": duration_min,
+        "steps_count": len(steps) if isinstance(steps, list) else None,
+    }
+
+
+async def baidu_direction_route(
+    origin: tuple[float, float],
+    destination: tuple[float, float],
+    *,
+    mode: str,
+    region: str | None = None,
+) -> Dict[str, Any]:
+    """Request a route from the Baidu Direction API.
+
+    Args:
+        origin: Origin coordinate as ``(longitude, latitude)``.
+        destination: Destination coordinate as ``(longitude, latitude)``.
+        mode: One of ``driving``, ``walking``, ``riding``, or ``transit``.
+        region: Optional city name required by some transit requests.
+
+    Returns:
+        A normalized route summary or an error dictionary.
+    """
+    ak = (os.getenv("BAIDU_MAP_AK") or "").strip()
+    if not ak:
+        return {"error": "BAIDU_MAP_AK not set"}
+
+    api_mode = (
+        mode
+        if mode in {"driving", "walking", "riding", "transit"}
+        else "transit"
+    )
+    path = f"/direction/v2/{api_mode}"
+    params_in_order: List[Tuple[str, str]] = [
+        ("origin", f"{origin[1]},{origin[0]}"),
+        ("destination", f"{destination[1]},{destination[0]}"),
+        ("ak", ak),
+        ("output", "json"),
+    ]
+    if api_mode == "transit" and region:
+        params_in_order.append(("region", normalize_city_name(region)))
+
+    sk = (os.getenv("BAIDU_MAP_SK") or "").strip()
+    if sk:
+        params_in_order.extend(
+            [
+                ("timestamp", str(int(time.time()))),
+                (
+                    "sn",
+                    _baidu_sn(path, params_in_order, sk),
+                ),
+            ]
+        )
+
+    try:
+        async with _BAIDU_API_LOCK:
+            async with httpx.AsyncClient(
+                timeout=_HTTP_TIMEOUT,
+                follow_redirects=True,
+            ) as client:
+                response = await client.get(
+                    f"https://api.map.baidu.com{path}",
+                    params=dict(params_in_order),
+                )
+                response.raise_for_status()
+                data = response.json()
+    except Exception as exc:
+        return {
+            "error": "baidu_direction_request_failed",
+            "message": f"{type(exc).__name__}: {exc}",
+        }
+
+    if not isinstance(data, dict):
+        return {"error": "invalid_baidu_direction_response", "raw": data}
+    if str(data.get("status")) not in ("0", "OK", "ok"):
+        return {
+            "error": "baidu_direction_error",
+            "status": data.get("status"),
+            "message": data.get("message") or data.get("msg"),
+            "raw": data,
+        }
+    summary = _extract_baidu_route_summary(data, api_mode)
+    if summary.get("error"):
+        return {**summary, "raw": data}
+    return {
+        "data_source": "baidu_direction_v2",
+        "mode": api_mode,
+        **summary,
+    }

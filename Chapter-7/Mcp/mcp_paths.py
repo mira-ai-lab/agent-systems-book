@@ -18,6 +18,6 @@ def bootstrap_paths(*, load_env: bool = True) -> None:
         if d.is_dir() and s not in sys.path:
             sys.path.insert(0, s)
     if load_env:
-        from chapter6.paths import load_project_dotenv
+        from config import load_project_dotenv
 
         load_project_dotenv()
