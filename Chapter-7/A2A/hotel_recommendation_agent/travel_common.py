@@ -298,7 +298,7 @@ _DOTENV_LOADED = False
 
 def _project_root_dir() -> str:
     try:
-        from chapter6.paths import BOOK_ROOT
+        from config import BOOK_ROOT
 
         return str(BOOK_ROOT)
     except ImportError:
