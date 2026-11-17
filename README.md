@@ -6,16 +6,16 @@
 
 ```
 agent-systems-book/
+├── llm.py                # 全书共享模型客户端与同步/异步调用
 ├── .env.example          # 环境变量模板（复制为 .env 后填写）
 ├── Chapter-2/            # 思维链推理（Chain-of-Thought）
 ├── Chapter-3/            # 长期记忆：向量存储与检索
 ├── Chapter-4/            # 任务拆解与依赖排序
 ├── Chapter-5/            # 单领域 LangChain Agent（酒店推荐）
 ├── Chapter-6/            # 旅行多智能体系统（核心章节）
-│   ├── chapter6/         # 路径与 .env 加载（统一入口）
-│   ├── sub_agents.py     # 6 个子智能体
-│   ├── fixed_graph/      # LangGraph 固定 StateGraph 编排
-│   └── supervisor/       # Supervisor handoff 动态调度
+│   ├── config.py         # 路径与 .env 加载（统一入口）
+│   ├── domain_agents.py  # 6 个领域智能体
+│   └── orchestrator.py     # 中心编排器入口
 ├── Chapter-7/            # 协议化协作
 │   ├── A2A/              # Agent-to-Agent（HTTP 远程 Agent + Supervisor）
 │   └── Mcp/              # Model Context Protocol（HTTP/SSE 工具服务）
@@ -46,7 +46,7 @@ agent-systems-book/
 | **Chapter-3** | 文本向量、Chroma 记忆读写 | `memory.ipynb` |
 | **Chapter-4** | 任务分解、依赖图排序 | `task_decomposition_and_planning.ipynb` |
 | **Chapter-5** | `@tool` + LangChain 酒店 Agent | `hotel_recommendation.ipynb` |
-| **Chapter-6** | 6 子智能体 + 三种编排模式 | 见下方「Chapter-6 快速开始」 |
+| **Chapter-6** | 中心控制器 + 6 个子智能体 | 见下方「Chapter-6 快速开始」 |
 | **Chapter-7 A2A** | 远程 Agent 协议 + Supervisor 调度 | `A2A/supervisor_local.py` |
 | **Chapter-7 MCP** | 酒店工具 MCP Server（SSE） | `Mcp/hotel_mcp_server.py` |
 | **Chapter-8** | Ch2–5 能力整合 + LangGraph 固定图 + Tracing | `scripts/run_demo.py --stream` |
@@ -156,7 +156,8 @@ cp .env.example .env
 | 使用场景 | 最少要配 | 建议额外配置 |
 |----------|----------|--------------|
 | Chapter-2～5 notebook / 单 Agent | `DASHSCOPE_API_KEY` | Chapter-3 记忆：`DASHSCOPE_EMBEDDING_*` |
-| Chapter-6 / 8 / 11 多智能体 CLI | `DASHSCOPE_API_KEY` | `AMAP_KEY` 或 `BAIDU_MAP_AK`（真实 POI）；`WEATHERAPI_KEY`（天气 MCP） |
+| Chapter-6 多智能体 CLI | `DASHSCOPE_API_KEY` | `AMAP_KEY` 或 `BAIDU_MAP_AK`（真实 POI）；WeatherAgent / FlightAgent 返回空结果 |
+| Chapter-8 / 11 多智能体 CLI | `DASHSCOPE_API_KEY` | `AMAP_KEY` 或 `BAIDU_MAP_AK`；`WEATHERAPI_KEY`（天气 MCP） |
 | Chapter-7 MCP / A2A | 书根 LLM Key + 对应章 `requirements.txt` | `HOTEL_MCP_*`（MCP 地址）；A2A 服务目录下局部 `.env` |
 | Chapter-8 导出 trace | 同上 | 六、`OTEL_TRACES_EXPORTER=file` 等（见 `.env.example`） |
 | Chapter-9 失败归因 | 书根或 `Automated_FA/.env` 的 `DASHSCOPE_API_KEY` | `FA_REFERENCE_DATE`（复现样例轨迹时） |
@@ -169,7 +170,7 @@ cp .env.example .env
 | `DASHSCOPE_API_KEY` | **必填** | 阿里云百炼 DashScope API Key |
 | `DASHSCOPE_CHAT_MODEL` | 可选 | 默认 `qwen-plus` |
 | `AMAP_KEY` / `BAIDU_MAP_AK` | 可选 | 地图 POI；不配则回退模拟数据或备用接口 |
-| `WEATHERAPI_KEY` | 可选 | 天气 MCP；不配则走高德或 wttr.in |
+| `WEATHERAPI_KEY` | 可选 | Chapter-8 / 11 天气 MCP；Chapter-6 不依赖该变量 |
 
 变量分段、可选开关与申请入口的完整说明见 **[`.env.example`](.env.example)**。
 
@@ -183,12 +184,12 @@ cp .env.example .env
 
 | 模块 | 加载逻辑 |
 |------|----------|
-| **Chapter-6** | `chapter6/paths.py` → `Chapter-6/.env` → 书根 `.env` |
+| **Chapter-6** | `config.py` → `Chapter-6/.env` → 书根 `.env` |
 | **Chapter-8** | `travel_multi_agent/config.py` → `Chapter-8/.env` → 书根 `.env` |
 | **Chapter-11** | `agent_framework/config.py` → `Chapter-11/.env` → 书根 `.env` |
 | **Chapter-7 A2A** | `hotel_recommendation_agent/.env` → 书根 `.env` |
 | **Chapter-9 AutoFA** | `Automated_FA/.env`（可与书根共用 Key；含 `FA_REFERENCE_DATE`） |
-| **Chapter-3 notebook** | `llm.py` → 仅加载书根 `.env`（不读取章节本地 `.env`） |
+| **Chapter-3～6** | 仓库根 `llm.py` → 仅加载书根 `.env`（不读取章节本地 `.env`） |
 
 #### `.env.example` 段落对照
 
@@ -198,12 +199,12 @@ cp .env.example .env
 |------|----------|----------|
 | 一、大模型 | `DASHSCOPE_API_KEY`、`OPENAI_*` | Chapter-2～11 通用 |
 | 二、地图 POI | `AMAP_KEY`、`BAIDU_MAP_AK` | 酒店 / 景点 / 美食 Agent；Chapter-8 / 11 travel |
-| 二点五、天气 MCP | `WEATHERAPI_KEY`、`WEATHER_USE_MCP` | Chapter-6 / 8 / 11 WeatherAgent |
+| 二点五、天气 MCP | `WEATHERAPI_KEY`、`WEATHER_USE_MCP` | Chapter-8 / 11 WeatherAgent |
 | 二点六、酒店 MCP | `HOTEL_MCP_*` | Chapter-7 MCP Server |
 | 二点七、旅行 MCP | `TRAVEL_MCP_*` | Chapter-8 / 11 `travel_agent_mcp_server.py` |
-| 三、航班 | `AVIATIONSTACK_KEY`、`VARIFLIGHT_API_KEY` | Chapter-6 / 8 / 11 FlightAgent |
+| 三、航班 | `AVIATIONSTACK_KEY`、`VARIFLIGHT_API_KEY` | Chapter-8 / 11 FlightAgent；Chapter-6 返回空航班列表 |
 | 四、其他 | `TMDB_BEARER_TOKEN` | 扩展 demo |
-| 五、长期记忆 | `MEMORY_BACKEND`、`MEMORY_NAMESPACE_PREFIX` | Chapter-6 / 8 / 11 的 `chroma_memory/` |
+| 五、长期记忆 | `MEMORY_BACKEND`、`MEMORY_NAMESPACE_PREFIX` | Chapter-8 / 11 的后端切换；Chapter-6 固定使用 Chroma |
 | 六、Chapter-8 可观测性 | `OTEL_TRACES_EXPORTER`、`LOG_LEVEL` | OpenTelemetry span 与结构化日志 |
 | 七、Chapter-11 平台 | `API_PORT`、`API_KEYS`、`CHECKPOINT_*`、`DEFAULT_DOMAIN` | HTTP API、Web Demo、多轮 checkpoint |
 | 八、Chapter-9 AutoFA | `FA_REFERENCE_DATE` 等 | 见 `Chapter-9/Automated_FA/.env.example` |
@@ -216,21 +217,16 @@ Chapter-11 运维向变量全集见 [Chapter-11/docs/operations.md](Chapter-11/d
 
 ## Chapter-6 快速开始
 
-Chapter-6 提供三种编排方式，能力等价、调度机制不同：
+Chapter-6 使用一个中心控制器完成预调查、记忆检索、任务拆解、依赖分析、
+子智能体调度和结果聚合。运行入口：
 
-| 模式 | 入口 | 说明 |
-|------|------|------|
-| 顺序编排 | `python central_orchestrator.py` | 最简单，适合入门 |
-| 固定图 | `python -m fixed_graph.run_demo` | 显式 StateGraph，可可视化 |
-| Supervisor | `cd supervisor && python local_supervisor.py` | 动态 handoff + 复合任务规划流水线 |
+```bash
+python orchestrator.py
+```
 
 子智能体：**Weather · Attraction · Hotel · Restaurant · Flight · Itinerary**
 
-详细对比见：
-
-- [Chapter-6/README.md](Chapter-6/README.md)
-- [Chapter-6/supervisor/README.md](Chapter-6/supervisor/README.md)
-- [Chapter-6/fixed_graph/README.md](Chapter-6/fixed_graph/README.md)
+详细说明见 [Chapter-6/README.md](Chapter-6/README.md)。
 
 ---
 
@@ -256,7 +252,7 @@ pre_survey → retrieve_memory → build_plan → execute_layer → aggregate �
 
 子智能体：**Weather · Attraction · Hotel · Restaurant · Flight · Itinerary**（与 Chapter-6 同源能力）
 
-与 Chapter-6 关系：Chapter-6 提供多种编排入口（顺序 / fixed_graph / supervisor）；Chapter-8 聚焦 **固定图工程化实现**（包结构、tracing、测试与书稿案例）。
+与 Chapter-6 关系：Chapter-6 聚焦中心控制器编排；Chapter-8 将相同业务能力进一步落地为 **固定图工程化实现**（包结构、tracing、测试与书稿案例）。
 
 详细说明见 [Chapter-8/README.md](Chapter-8/README.md)
 
@@ -364,7 +360,7 @@ Chapter-4  任务拆解 → 依赖排序
     ↓
 Chapter-5  单 Agent + Tool（酒店）
     ↓
-Chapter-6  多 Agent 编排（fixed_graph / supervisor）
+Chapter-6  多 Agent 中心控制器编排
     ↓
 Chapter-8  工程化整合（travel_multi_agent 包 · 固定图 · 可观测性 · 书稿案例）
     ↓
@@ -381,10 +377,10 @@ Chapter-11 平台化（Router SDK · 域插件 · API · Web Demo · Prompt 进�
 ## 常见问题
 
 **Q：只配了 `DASHSCOPE_API_KEY`，能跑吗？**  
-A：可以。Chapter-6 / Chapter-8 / Chapter-11 核心流程可运行；地图、航班等未配置时会回退 stub 或公开备用接口（如 wttr.in 天气）。
+A：可以。Chapter-6 核心流程可运行，但天气和航班工具返回空结果；Chapter-8 / 11 未配置天气 MCP 时会回退其他天气源。
 
 **Q：Chapter-6 和 Chapter-8 有什么区别？**  
-A：业务能力等价（6 个子智能体 + 预调查 + 记忆 + 任务规划）。Chapter-6 含三种编排入口与 Supervisor 模式；Chapter-8 以 **LangGraph 固定图** 为主，代码组织为 `travel_multi_agent` 包，并增加 **Tracing**、**pytest** 与 **`book/` 书稿离线案例**。
+A：业务能力相近（6 个子智能体 + 预调查 + 记忆 + 任务规划）。Chapter-6 聚焦中心控制器编排；Chapter-8 以 **LangGraph 固定图** 为主，代码组织为 `travel_multi_agent` 包，并增加 **Tracing**、**pytest** 与 **`book/` 书稿离线案例**。
 
 **Q：Chapter-8 和 Chapter-11 有什么区别？**  
 A：旅行业务能力相近；Chapter-11 在 Chapter-8 工程化基础上 **抽象为通用 SDK**（`agent_framework` + `domains/` 插件），增加 **Router 语义路由**、**FastAPI + SSE**、**TypeScript SDK / Web Demo**、**benchmark 与 TextGrad 优化**，是当前仓库的 **生产化主线**。
@@ -398,14 +394,11 @@ A：适配 OpenTelemetry span JSONL（如 `latc.travel-multi-agent` 导出）；
 **Q：模型名写 `qwen3.6-plus` 报错？**  
 A：请改为 `qwen-plus`（或 `.env` 里 `DASHSCOPE_CHAT_MODEL` / `DEPLOYMENT_NAME` 使用百炼控制台实际模型名）。
 
-**Q：Chapter-6 和 Chapter-7 的 `travel_common` 是什么关系？**  
-A：Chapter-6 为共享库源头；Chapter-7 A2A/MCP 目录各有副本或引用，酒店检索逻辑与 Chapter-5/6 保持一致。
-
 **Q：书稿第 10 章（自演化 Agent）代码在哪？**  
 A：仓库**无 `Chapter-10/` 目录**。正文自演化主题已并入 **Chapter-11**：`agent_framework/optimization/`、TextGrad 脚本与 `notebooks/planner_b1_textgrad_graph.ipynb`；与主编排并行，产物写入 `data/benchmark/**/optimized/`。见 [prompt_evolution.md](Chapter-11/docs/prompt_evolution.md)。
 
 **Q：长期记忆存在哪？**  
-A：Chapter-6 默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；Chapter-8 默认到 `Chapter-8/chroma_memory/`；Chapter-11 默认到 `Chapter-11/chroma_memory/`。均可通过 `MEMORY_BACKEND=store` 切换 LangGraph Store（进程内，重启清空）。
+A：Chapter-6 固定使用 Chroma，持久化到 `Chapter-6/chroma_memory/`；Chapter-8 和 Chapter-11 默认也使用各自章节目录下的 `chroma_memory/`，并通过 `MEMORY_BACKEND=store` 切换 LangGraph Store（进程内，重启清空）。
 
 ---
 
@@ -414,8 +407,7 @@ A：Chapter-6 默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；Chapter-8 
 | 文档 | 内容 |
 |------|------|
 | [.env.example](.env.example) | 全部环境变量说明与申请链接 |
-| [Chapter-6/README.md](Chapter-6/README.md) | 多智能体目录结构与三种模式 |
-| [Chapter-6/supervisor/README.md](Chapter-6/supervisor/README.md) | Supervisor handoff 与长期记忆 |
+| [Chapter-6/README.md](Chapter-6/README.md) | 中心控制器编排与子智能体 |
 | [Chapter-8/README.md](Chapter-8/README.md) | 工程化多智能体包、Tracing、运行与 API |
 | [Chapter-7/A2A/hotel_recommendation_agent/README.md](Chapter-7/A2A/hotel_recommendation_agent/README.md) | A2A 服务启动与测试 |
 | [Chapter-7/Mcp/README.md](Chapter-7/Mcp/README.md) | MCP Server / Client |
@@ -424,3 +416,15 @@ A：Chapter-6 默认 Chroma 持久化到 `Chapter-6/chroma_memory/`；Chapter-8 
 | [Chapter-11/docs/prompt_evolution.md](Chapter-11/docs/prompt_evolution.md) | Prompt 进化 / TextGrad / benchmark 优化轨 |
 | [Chapter-11/tests/README.md](Chapter-11/tests/README.md) | 测试模块与 phase 对照 |
 | [Chapter-11/docs/](Chapter-11/docs/) | SDK 集成、Router、编排、插件开发等设计文档 |
+
+---
+
+## 关于本书案例
+
+本书案例源自编者团队的近年研究工作与项目实践。在梳理并转化为教材过程中，考虑到知识讲解的连贯性和理解成本，进行了简化与调整。我们非常鼓励读者在理解和掌握案例的基础上，结合自身的思考与实际需求，尝试对现有方案进行优化，探索更多可能的实现路径。
+
+本书的编写过程，也恰好经历了 AI 技术快速迭代与开发范式持续演进的阶段。从传统编程，到 Vibe Coding，再到以 Spec 为核心的规范驱动开发；从 RAG 技术的探索，到长期记忆、智能体编排，再到智能体行为归因，每一章不仅介绍了一项技术或一种方法，也承载着编者在不同阶段的研究探索、技术实践与项目落地。
+
+这些方向本身也始终处于演进之中。例如，在长期记忆领域，技术探索经历了从基于文本的记忆，到基于向量化的语义检索，再到引入事件图谱等结构化记忆组织方式的演进，近期也出现从记忆出发进一步探索大模型信念建模的研究。在智能体编排领域，实践则从早期基于工作流的任务组织，逐步发展到以中心编排为代表的多智能体协作模式。在这一过程中，围绕长上下文的存储、压缩与传递，以及智能体路由、任务分解和协作机制等问题，也形成了持续深入的研究与实践。
+
+因此，我们并不试图将某一种技术方案定义为最终答案，也不希望将读者的探索局限于书中的案例。技术仍在演进，探索也不会止步。期待读者以书中的知识与案例为基础，在实践中发现问题、提出新的思路，开展更有价值的研究探索，并将技术创新转化为能够解决客户实际问题、创造真实价值的项目实践。

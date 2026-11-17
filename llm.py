@@ -1,11 +1,11 @@
-"""Model client and invocation helpers for Chapter 4.
+"""Shared model client and invocation helpers for the book.
 
-This module centralizes environment loading, chat-model construction, response
-text extraction, and JSON parsing. Task decomposition and dependency ordering
-remain in the chapter notebook so the teaching flow stays visible.
+This module is the repository-level source of model configuration, synchronous
+and asynchronous JSON calls, text extraction, JSON parsing, and structured
+output invocation.
 
-:author: zhanghong, liuhui
-:date: 2026-11-15
+:author: liuhui
+:date: 2026-11-17
 """
 
 from __future__ import annotations
@@ -19,15 +19,24 @@ from typing import Any
 from dotenv import load_dotenv
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parent
 ENV_FILE = PROJECT_ROOT / ".env"
 load_dotenv(ENV_FILE)
+
+
+def load_project_env() -> Path:
+    """Load the repository-level environment file and return its path."""
+    if not ENV_FILE.is_file():
+        raise FileNotFoundError(f"Project environment file not found: {ENV_FILE}")
+    load_dotenv(ENV_FILE)
+    return ENV_FILE
 
 
 def model_configured() -> bool:
     """Return whether an OpenAI-compatible model credential is configured."""
     return bool(
         (os.getenv("OPENAI_API_KEY") or "").strip()
+        or (os.getenv("OPENROUTER_API_KEY") or "").strip()
         or (os.getenv("DASHSCOPE_API_KEY") or "").strip()
     )
 
@@ -37,31 +46,30 @@ def create_llm(
     temperature: float = 0,
     model: str | None = None,
 ):
-    """Create the chat model used by the Chapter 4 examples.
-
-    OpenAI is preferred when ``OPENAI_API_KEY`` is configured. Otherwise, the
-    function uses ``DASHSCOPE_API_KEY`` with the DashScope OpenAI-compatible
-    endpoint. TLS verification is enabled by default.
+    """Create a shared OpenAI- or DashScope-compatible chat model.
 
     Args:
         temperature: Model sampling temperature.
-        model: Explicit model name. When omitted, the model is read from the
-            matching environment variable.
+        model: Optional explicit model name.
 
     Returns:
         A configured LangChain ``ChatOpenAI`` instance.
 
     Raises:
-        RuntimeError: If neither supported API key is configured.
+        RuntimeError: If no supported model API key is configured.
     """
     from langchain_openai import ChatOpenAI
 
-    openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    openai_key = (
+        os.getenv("OPENAI_API_KEY")
+        or os.getenv("OPENROUTER_API_KEY")
+        or ""
+    ).strip()
     dashscope_key = (os.getenv("DASHSCOPE_API_KEY") or "").strip()
     if not openai_key and not dashscope_key:
         raise RuntimeError(
-            "Configure OPENAI_API_KEY or DASHSCOPE_API_KEY in the repository "
-            "root .env file."
+            "Configure OPENAI_API_KEY, OPENROUTER_API_KEY, or "
+            "DASHSCOPE_API_KEY in the repository root .env file."
         )
 
     use_dashscope = not openai_key
@@ -69,7 +77,7 @@ def create_llm(
         "model": (
             model
             or (
-                os.getenv("DASHSCOPE_CHAT_MODEL", "qwen3.7-plus")
+                os.getenv("DASHSCOPE_CHAT_MODEL", "qwen-plus")
                 if use_dashscope
                 else os.getenv("OPENAI_MODEL", "gpt-4o-mini")
             )
@@ -93,13 +101,12 @@ def create_llm(
             in {"1", "true", "yes", "on"}
         }
 
-    ssl_verify = os.getenv("OPENAI_SSL_VERIFY", "1").strip().lower() not in {
+    if os.getenv("OPENAI_SSL_VERIFY", "1").strip().lower() in {
         "0",
         "false",
         "no",
         "off",
-    }
-    if not ssl_verify:
+    }:
         import httpx
 
         kwargs["http_client"] = httpx.Client(verify=False)
@@ -108,7 +115,7 @@ def create_llm(
 
 
 def extract_response_text(response: Any) -> str:
-    """Extract plain text from a LangChain chat response."""
+    """Extract plain text from a LangChain response."""
     content = getattr(response, "content", None)
     if isinstance(content, str):
         return content.strip()
@@ -123,8 +130,8 @@ def extract_response_text(response: Any) -> str:
     return str(content or "").strip()
 
 
-def parse_json_response(text: str) -> dict[str, Any]:
-    """Parse a JSON object from plain, fenced, or lightly wrapped model text."""
+def parse_json_response(text: str) -> Any:
+    """Parse one JSON object or array from model output."""
     raw = (text or "").strip()
     if not raw:
         raise ValueError("The model returned an empty response; JSON parsing failed.")
@@ -133,19 +140,63 @@ def parse_json_response(text: str) -> dict[str, Any]:
     fenced = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw, re.IGNORECASE)
     if fenced:
         candidates.insert(0, fenced.group(1).strip())
-    braced = re.search(r"\{[\s\S]*\}", raw)
-    if braced:
-        candidates.append(braced.group(0))
 
+    decoder = json.JSONDecoder()
     last_error: Exception | None = None
     for candidate in candidates:
         try:
-            value = json.loads(candidate)
-            if isinstance(value, dict):
+            value, _ = decoder.raw_decode(candidate)
+            if isinstance(value, (dict, list)):
                 return value
         except json.JSONDecodeError as exc:
             last_error = exc
-    raise ValueError(f"Could not parse a JSON object from model output: {last_error}")
+
+    for index in sorted(
+        position
+        for token in ("{", "[")
+        if (position := raw.find(token)) >= 0
+    ):
+        try:
+            value, _ = decoder.raw_decode(raw[index:])
+            if isinstance(value, (dict, list)):
+                return value
+        except json.JSONDecodeError as exc:
+            last_error = exc
+    raise ValueError(f"Could not parse JSON from model output: {last_error}")
+
+
+def invoke_json_sync(
+    llm: Any,
+    prompt: str,
+    *,
+    system_prompt: str | None = None,
+    require_object: bool = False,
+) -> Any:
+    """Synchronously invoke the model and parse a JSON object or array.
+
+    Args:
+        llm: LangChain-compatible chat model.
+        prompt: User prompt.
+        system_prompt: Optional system instruction.
+        require_object: Require a JSON object instead of accepting an array.
+
+    Returns:
+        The decoded JSON object or array.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    messages: list[Any] = []
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=prompt))
+    response = llm.invoke(
+        messages,
+        response_format={"type": "json_object"},
+    )
+    value = parse_json_response(extract_response_text(response))
+    if require_object and not isinstance(value, dict):
+        raise ValueError("Expected a JSON object response")
+    return value
 
 
 async def invoke_chat(
@@ -155,17 +206,7 @@ async def invoke_chat(
     system_prompt: str | None = None,
     json_mode: bool = False,
 ) -> str:
-    """Invoke a chat model and return response text.
-
-    Args:
-        llm: A LangChain-compatible chat model.
-        prompt: User message to send.
-        system_prompt: Optional system message.
-        json_mode: Whether to request a JSON object response from the provider.
-
-    Returns:
-        The response text with surrounding whitespace removed.
-    """
+    """Invoke one asynchronous chat request and return response text."""
     from langchain_core.messages import HumanMessage, SystemMessage
 
     messages: list[Any] = []
@@ -188,12 +229,27 @@ async def invoke_json(
     prompt: str,
     *,
     system_prompt: str | None = None,
-) -> dict[str, Any]:
-    """Invoke a chat model and parse its response as a JSON object."""
+    require_object: bool = False,
+) -> Any:
+    """Invoke one asynchronous request and parse a JSON object or array."""
     text = await invoke_chat(
         llm,
         prompt,
         system_prompt=system_prompt,
         json_mode=True,
     )
-    return parse_json_response(text)
+    value = parse_json_response(text)
+    if require_object and not isinstance(value, dict):
+        raise ValueError("Expected a JSON object response")
+    return value
+
+
+async def invoke_structured(
+    llm: Any,
+    prompt: str,
+    *,
+    schema: Any,
+) -> Any:
+    """Invoke one asynchronous structured-output request."""
+    structured_llm = llm.with_structured_output(schema)
+    return await structured_llm.ainvoke(prompt)
