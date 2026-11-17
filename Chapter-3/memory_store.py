@@ -12,6 +12,7 @@ by vector similarity, merges them when needed, and updates the local cache.
 
 from __future__ import annotations
 
+import asyncio
 import gc
 import json
 import os
@@ -248,6 +249,77 @@ class MemoryStore:
         self._sync_index_state()
         return memory_id
 
+    async def add_async(
+        self,
+        extracted: dict[str, Any],
+        *,
+        memory_type: str = "general",
+        importance: float | None = None,
+        extra_metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Asynchronously write and optionally merge one extracted memory."""
+        resolved_importance = float(
+            importance
+            if importance is not None
+            else extracted.get("importance", 0.5)
+        )
+        metadata = {**(extra_metadata or {}), "user_id": self.user_id}
+        duplicate_id = await asyncio.to_thread(
+            self._find_duplicate,
+            extracted["summary"],
+        )
+
+        if duplicate_id and self.config.merge_on_duplicate:
+            existing = await asyncio.to_thread(
+                self.collection.get,
+                ids=[duplicate_id],
+            )
+            old_metadata = (existing.get("metadatas") or [{}])[0] or {}
+            try:
+                key_points = json.loads(old_metadata.get("key_points", "[]"))
+            except (TypeError, json.JSONDecodeError):
+                key_points = []
+            old_memory = {
+                "id": duplicate_id,
+                "content": (existing.get("documents") or [""])[0],
+                "summary": old_metadata.get("summary", ""),
+                "key_points": key_points,
+                "importance": old_metadata.get("importance", 0.5),
+            }
+            merged = await self.merger.merge_async([old_memory, extracted])
+            memory_id = duplicate_id
+            await asyncio.to_thread(
+                self.collection.update,
+                ids=[memory_id],
+                documents=[merged["content"]],
+                metadatas=[
+                    self._build_metadata(
+                        merged,
+                        memory_type,
+                        float(merged.get("importance", resolved_importance)),
+                        metadata,
+                    )
+                ],
+            )
+        else:
+            memory_id = extracted["id"]
+            await asyncio.to_thread(
+                self.collection.add,
+                ids=[memory_id],
+                documents=[extracted["content"]],
+                metadatas=[
+                    self._build_metadata(
+                        extracted,
+                        memory_type,
+                        resolved_importance,
+                        metadata,
+                    )
+                ],
+            )
+
+        await asyncio.to_thread(self._sync_index_state)
+        return memory_id
+
     @staticmethod
     def _build_metadata(
         extracted: dict[str, Any],
@@ -279,6 +351,27 @@ class MemoryStore:
         extra_metadata = {"user_id": self.user_id, **(metadata or {})}
         extracted = self.extractor.extract(content, metadata=extra_metadata)
         return self.add(
+            extracted,
+            memory_type=memory_type,
+            importance=importance,
+            extra_metadata=extra_metadata,
+        )
+
+    async def ingest_long_term_async(
+        self,
+        content: str,
+        *,
+        memory_type: str = "general",
+        importance: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Asynchronously extract, merge if needed, and persist one memory."""
+        extra_metadata = {"user_id": self.user_id, **(metadata or {})}
+        extracted = await self.extractor.extract_async(
+            content,
+            metadata=extra_metadata,
+        )
+        return await self.add_async(
             extracted,
             memory_type=memory_type,
             importance=importance,

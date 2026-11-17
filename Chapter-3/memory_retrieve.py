@@ -15,6 +15,7 @@ by vector similarity, time decay, and importance.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -229,6 +230,27 @@ class MemoryRetriever:
             key=lambda item: item["final_score"],
             reverse=True,
         )[:limit]
+
+    async def search_async(
+        self,
+        query: str,
+        *,
+        user_id: str | None = None,
+        memory_types: list[str] | None = None,
+        top_k: int | None = None,
+        use_time_decay: bool = True,
+        use_importance_weight: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Run hybrid memory retrieval without blocking the event loop."""
+        return await asyncio.to_thread(
+            self.search,
+            query,
+            user_id=user_id,
+            memory_types=memory_types,
+            top_k=top_k,
+            use_time_decay=use_time_decay,
+            use_importance_weight=use_importance_weight,
+        )
 
     def _time_decay(self, timestamp: str) -> float:
         """Calculate an exponential decay weight from the memory timestamp."""
