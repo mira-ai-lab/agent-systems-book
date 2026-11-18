@@ -5,7 +5,7 @@ model-ready context and maintains short-term dialogue buffers isolated by
 thread.
 
 :author: zhanghong, liuhui
-:date: 2026-11-14
+:date: 2026-11-18
 """
 
 from __future__ import annotations
@@ -49,6 +49,11 @@ class ThreadShortTermMemory:
         return "\n".join(
             f"{turn['role']}: {turn['content']}" for turn in turns
         )
+
+    def clear(self) -> None:
+        """Clear all in-memory conversation threads."""
+        self._threads.clear()
+
 
 class MemoryContextBuilder:
     """Combine short-term dialogue and long-term memory into a final prompt."""
