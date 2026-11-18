@@ -2,3 +2,5 @@
 .env
 __pycache__/
 *.py[cod]
+.vscode/
+Chapter-6/chroma_memory/
