@@ -11,7 +11,7 @@ Apply for an Amap or Baidu map key so the agent can query a real hotel candidate
 | Provider | Purpose | Interface | Endpoint | Docs | Apply for a key |
 | --- | --- | --- | --- | --- | --- |
 | Amap | Query hotel, restaurant, and attraction POIs | Web Service API "Search POI 2.0" text search | `https://restapi.amap.com/v5/place/text` | [docs](https://lbs.amap.com/api/webservice/guide/api-advanced/newpoisearch) | [apply](https://console.amap.com/dev/key/app) |
-| Baidu | Query hotel, restaurant, attraction, and route data | WebService API Place API 2.0 and Direction API | `https://api.map.baidu.com/place/v2/search`, `https://api.map.baidu.com/direction/v2/*` | [docs](https://lbsyun.baidu.com/docs/webapi?title=placev3/guide/webservice-placeapiV3/interfaceDocumentV2) | [apply](https://lbsyun.baidu.com/apiconsole/key) |
+| Baidu | Query hotel, restaurant, and attraction POIs | WebService API Place API 2.0 | `https://api.map.baidu.com/place/v2/search` | [docs](https://lbsyun.baidu.com/docs/webapi?title=placev3/guide/webservice-placeapiV3/interfaceDocumentV2) | [apply](https://lbsyun.baidu.com/apiconsole/key) |
 
 ## Environment variables
 
@@ -28,11 +28,11 @@ BAIDU_MAP_AK=...        # Baidu server-side AK (either this or Amap)
 
 `Baidu/Amap HTTP API → map_api.py → hotel_search.py → @tool recommend_hotel → create_agent → run_hotel_agent`
 
-`restaurant_search.py` and `attraction_search.py` expose the same map-backed search pattern for restaurant and classic scenic POIs. `map_api.py` also provides reusable coordinate parsing, distance estimation, and Baidu Direction requests. They are reused by Chapter 6 as ordinary Python tools.
+`restaurant_search.py` and `attraction_search.py` expose the same map-backed search pattern for restaurant and classic scenic POIs. They are reused by Chapter 6 as ordinary Python tools.
 
 | Module | Responsibility |
 | --- | --- |
-| `map_api.py` | Raw Baidu/Amap POI requests, common POI normalization, coordinates, distance, and Baidu Direction |
+| `map_api.py` | Raw Baidu/Amap POI requests and common POI normalization |
 | `hotel_search.py` | Hotel keyword construction, normalized hotel search, and hotel validation |
 | `restaurant_search.py` | Restaurant keyword construction, normalized restaurant search, and validation |
 | `attraction_search.py` | Attraction/classic-POI search and validation |
@@ -60,7 +60,7 @@ Open `hotel_recommendation.ipynb`, select the repo-root `.venv` kernel, then run
 | 供应商 | 用途 | 接口 | 服务地址 | 文档 | 申请 Key |
 | --- | --- | --- | --- | --- | --- |
 | 高德 | 查询酒店、餐馆和景点 POI | Web服务 API「搜索POI 2.0」关键字搜索 | `https://restapi.amap.com/v5/place/text` | [docs](https://lbs.amap.com/api/webservice/guide/api-advanced/newpoisearch) | [apply](https://console.amap.com/dev/key/app) |
-| 百度 | 查询酒店、餐馆、景点及路线 | WebService API「地点检索2.0」与 Direction API | `https://api.map.baidu.com/place/v2/search`、`https://api.map.baidu.com/direction/v2/*` | [docs](https://lbsyun.baidu.com/docs/webapi?title=placev3/guide/webservice-placeapiV3/interfaceDocumentV2) | [apply](https://lbsyun.baidu.com/apiconsole/key) |
+| 百度 | 查询酒店、餐馆和景点 POI | WebService API「地点检索2.0」 | `https://api.map.baidu.com/place/v2/search` | [docs](https://lbsyun.baidu.com/docs/webapi?title=placev3/guide/webservice-placeapiV3/interfaceDocumentV2) | [apply](https://lbsyun.baidu.com/apiconsole/key) |
 
 ## 环境变量
 
@@ -77,11 +77,11 @@ BAIDU_MAP_AK=...        # 百度服务端 AK（与高德二选一）
 
 `百度/高德 HTTP API → map_api.py → hotel_search.py → @tool recommend_hotel → create_agent → run_hotel_agent`
 
-`restaurant_search.py` 与 `attraction_search.py` 提供餐馆和经典景点 POI 的同类搜索能力；`map_api.py` 同时提供坐标解析、距离估算和百度 Direction 路线请求。第 6 章直接复用这些普通 Python 工具。
+`restaurant_search.py` 与 `attraction_search.py` 提供餐馆和经典景点 POI 的同类搜索能力，第 6 章直接复用这些普通 Python 工具。
 
 | 模块 | 职责 |
 | --- | --- |
-| `map_api.py` | 百度/高德原始 POI 请求、通用 POI 归一化、坐标解析、距离估算和百度 Direction |
+| `map_api.py` | 百度/高德原始 POI 请求和通用 POI 归一化 |
 | `hotel_search.py` | 酒店搜索词构造、标准化酒店搜索和有效性校验 |
 | `restaurant_search.py` | 餐馆搜索词构造、标准化餐馆搜索和有效性校验 |
 | `attraction_search.py` | 景点/经典 POI 搜索和有效性校验 |
