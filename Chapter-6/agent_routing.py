@@ -1,11 +1,22 @@
-"""Capability-based routing from subtasks to Chapter 6 domain agents.
+"""Route planned tasks to Chapter 6 domain agents.
 
-The router asks the language model to select one domain agent and extract that
-agent's tool parameters for every subtask. Locally validated dependencies are
-always reattached after model output, so the model cannot alter execution order.
+This module is the independent agent-routing stage used after task planning. It
+renders the registered agent capability catalog, asks the language model to
+select one suitable agent per task, and extracts parameters accepted by that
+agent's tool schema.
+
+Main capabilities:
+
+- Match each planned task to one registered domain agent.
+- Fill tool parameters from the fact-survey result and original task context.
+- Validate agent names and filter unsupported tool parameters.
+- Reattach task descriptions and validated dependencies from local code.
+
+The model supplies only routing decisions and tool parameters. The module keeps
+task identity, dependency relationships, and execution order authoritative.
 
 :author: zhanghong, liuhui
-:date: 2026-11-16
+:date: 2026-11-18
 """
 
 from __future__ import annotations
@@ -23,8 +34,8 @@ AGENT_ROUTING_PROMPT = """你是中心智能体的「子任务路由模块」。
 ## 可用领域智能体
 {agent_team}
 
-## 预调查已确认事实
-{given_facts_json}
+## 事实调查结果
+{pre_survey_json}
 
 ## 子任务列表
 {subtasks_json}
@@ -38,10 +49,8 @@ AGENT_ROUTING_PROMPT = """你是中心智能体的「子任务路由模块」。
 [
   {{
     "task_id": "T1",
-    "description": "子任务原文",
     "agent": "WeatherAgent",
-    "params": {{"city": "上海", "date": "2026-05-01"}},
-    "depends_on": []
+    "params": {{"city": "上海", "date": "2026-05-01"}}
   }}
 ]
 
@@ -49,9 +58,8 @@ AGENT_ROUTING_PROMPT = """你是中心智能体的「子任务路由模块」。
 1. agent 必须是可用领域智能体之一。
 2. 每个子任务只分配一个 agent。
 3. params 字段名必须匹配该 agent 的 inputSchema。
-4. depends_on 必须与上方依赖分析结果完全一致。
-5. 必须为每个 task_id 输出一条记录。
-6. 不要输出任何解释文字。
+4. 必须为每个 task_id 输出一条记录。
+5. 不要输出 description、depends_on 或其他解释文字，任务原文和依赖关系由本地代码保留。
 """
 
 
@@ -71,16 +79,7 @@ class AgentRouter:
     def _valid_agent_names(self) -> set[str]:
         """Return the domain-agent names that routing may select."""
         agents = getattr(self.agent_registry, "agents", None)
-        if isinstance(agents, dict) and agents:
-            return set(agents.keys())
-        return {
-            "WeatherAgent",
-            "AttractionAgent",
-            "HotelAgent",
-            "RestaurantAgent",
-            "FlightAgent",
-            "ItineraryAgent",
-        }
+        return set(agents.keys()) if isinstance(agents, dict) else set()
 
     @staticmethod
     def _merge_routed_item(
@@ -90,6 +89,7 @@ class AgentRouter:
         id_to_desc: Dict[str, str],
         depends_map: Dict[str, List[str]],
         valid_agents: set[str],
+        allowed_fields: Dict[str, set[str]],
     ) -> Dict[str, Any]:
         """Validate one routed item and reattach authoritative dependencies.
 
@@ -99,27 +99,37 @@ class AgentRouter:
             id_to_desc: Mapping from task IDs to original descriptions.
             depends_map: Locally validated dependencies keyed by task ID.
             valid_agents: Domain-agent names accepted by the registry.
+            allowed_fields: Tool parameter names accepted by each agent.
 
         Returns:
             A normalized routed subtask, including a routing error when the
             selected agent is unavailable.
         """
         agent = (item.get("agent") or "").strip()
+        raw_params = item.get("params")
+        params = dict(raw_params) if isinstance(raw_params, dict) else {}
         if agent not in valid_agents:
             return {
                 "task_id": task_id,
-                "description": item.get("description") or id_to_desc.get(task_id, ""),
+                "description": id_to_desc.get(task_id, ""),
                 "agent": None,
-                "params": item.get("params") or {},
+                "params": params,
                 "depends_on": depends_map.get(task_id, []),
                 "routing_error": "invalid_agent",
             }
+        accepted = allowed_fields.get(agent, set())
+        filtered_params = {
+            key: value
+            for key, value in params.items()
+            if key in accepted
+        }
         return {
             "task_id": task_id,
-            "description": item.get("description") or id_to_desc.get(task_id, ""),
+            "description": id_to_desc.get(task_id, ""),
             "agent": agent,
-            "params": item.get("params") or {},
+            "params": filtered_params,
             "depends_on": depends_map.get(task_id, []),
+            "ignored_params": sorted(set(params) - set(filtered_params)),
         }
 
     @staticmethod
@@ -166,14 +176,22 @@ class AgentRouter:
         Returns:
             Non-empty routing records returned by the model.
         """
-        given_facts = pre_survey.get("given_facts") or []
+        pre_survey_data = {
+            key: value
+            for key, value in pre_survey.items()
+            if key != "raw_text"
+        }
         prompt = AGENT_ROUTING_PROMPT.format(
             agent_team=(
                 self.agent_registry.get_all_agents_text()
                 + "\n"
                 + self.agent_registry.get_agent_parameters_text()
             ),
-            given_facts_json=json.dumps(given_facts, ensure_ascii=False, indent=2),
+            pre_survey_json=json.dumps(
+                pre_survey_data,
+                ensure_ascii=False,
+                indent=2,
+            ),
             subtasks_json=json.dumps(subtasks_for_prompt, ensure_ascii=False, indent=2),
             depends_on_json=json.dumps(depends_map, ensure_ascii=False, indent=2),
         )
@@ -188,7 +206,7 @@ class AgentRouter:
 
     async def route_to_agents(
         self,
-        sub_steps: List[str],
+        tasks: List[Dict[str, Any]],
         execution_order: List[str],
         depends_map: Dict[str, List[str]],
         pre_survey: Dict[str, Any],
@@ -196,7 +214,7 @@ class AgentRouter:
         """Route every subtask to one domain agent.
 
         Args:
-            sub_steps: Natural-language subtasks from Chapter 4 decomposition.
+            tasks: Structured tasks from Chapter 4 planning.
             execution_order: Dependency-safe task IDs.
             depends_map: Locally validated dependencies keyed by task ID.
             pre_survey: Structured facts extracted before decomposition.
@@ -206,9 +224,17 @@ class AgentRouter:
             is represented with a ``routing_error`` field rather than dropped.
         """
         valid_agents = self._valid_agent_names()
+        allowed_fields = {
+            agent_name: self.agent_registry.get_agent_input_fields(agent_name)
+            for agent_name in valid_agents
+        }
+        task_by_id = {
+            task["task_id"]: task
+            for task in tasks
+        }
         id_to_desc = {
-            f"T{index + 1}": description
-            for index, description in enumerate(sub_steps)
+            task_id: task.get("description", "")
+            for task_id, task in task_by_id.items()
         }
 
         def prompt_batch(task_ids: List[str]) -> List[Dict[str, Any]]:
@@ -257,6 +283,7 @@ class AgentRouter:
                         id_to_desc=id_to_desc,
                         depends_map=depends_map,
                         valid_agents=valid_agents,
+                        allowed_fields=allowed_fields,
                     )
                 )
         return subtasks

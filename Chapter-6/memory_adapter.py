@@ -1,11 +1,22 @@
-"""Chapter 6 adapter for the shared Chapter 3 memory implementation.
+"""Adapt Chapter 3 memory capabilities for the Chapter 6 controller.
 
-The adapter reuses memory extraction, merging, Chroma storage, hybrid retrieval,
-and short-term context from Chapter 3 while preserving the interface expected by
-the central controller.
+This module provides a stable interface around the shared extraction, merging,
+Chroma storage, hybrid retrieval, context-building, and short-term thread memory
+components implemented in Chapter 3. It avoids duplicating memory logic while
+giving the central controller the operations it needs.
+
+Main capabilities:
+
+- Build and initialize the Chapter 3 memory components.
+- Search relevant long-term memories and format them for task planning.
+- Record conversation turns and ingest new preference memories.
+- Supply short-term thread context and release or reset storage resources.
+
+The adapter owns integration concerns only; memory extraction, ranking, storage,
+and context construction remain implemented in Chapter 3.
 
 :author: zhanghong, liuhui
-:date: 2026-11-16
+:date: 2026-11-18
 """
 
 from __future__ import annotations
@@ -154,12 +165,15 @@ class MemoryAdapter:
 
 
 def release_memory_handles(memory: Optional[MemoryAdapter]) -> None:
-    """Clear and close Chapter 3 memory resources held by Chapter 6."""
+    """Close Chapter 3 memory resources held by Chapter 6.
+
+    Persistent long-term memories are intentionally preserved; call
+    ``reset_chroma_directory`` when a clean store is explicitly required.
+    """
     if memory is None:
         return
-    memory.store.clear_all_memories()
     memory.store.close()
-    memory.short_term._threads.clear()
+    memory.short_term.clear()
 
 
 def reset_chroma_directory(

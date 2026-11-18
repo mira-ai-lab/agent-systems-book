@@ -1,10 +1,26 @@
-"""Central orchestrator for Chapter 6 multi-agent travel planning.
+"""Control request routing and centralized multi-agent execution for Chapter 6.
 
-The controller coordinates pre-survey, long-term memory, task decomposition,
-dependency analysis, domain-agent execution, and final aggregation.
+This module is the entry point for the Chapter 6 travel-planning application.
+Its central system prompt classifies non-travel requests for direct model reply
+and sends travel requests into a code-controlled pipeline. The orchestrator then
+coordinates fact survey, long-term memory, task planning, independent agent
+routing, dependency-layer execution, final itinerary selection, and memory
+write-back.
+
+Main capabilities:
+
+- Separate direct requests from travel tasks before planning.
+- Compose Chapter 2, 3, 4, and 5 services into one explicit execution flow.
+- Execute dependency layers and enforce each agent's concurrency policy.
+- Pass dependency results to downstream agents and preserve failure states.
+- Select the final itinerary result and persist the completed travel turn.
+
+Planning, routing, and execution are deliberately separate. The module keeps
+the sequence and control decisions in code, while the language model is used
+only for request classification and the specialized planning/routing prompts.
 
 :author: zhanghong, liuhui
-:date: 2026-11-17
+:date: 2026-11-18
 """
 
 from __future__ import annotations
@@ -16,60 +32,50 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from langchain_openai import ChatOpenAI
 
+from agent_routing import AgentRouter
 from config import CHROMA_DIR, load_project_dotenv
-from memory_adapter import MemoryAdapter
 from domain_agents import (
     DomainAgentRegistry,
     build_domain_agent_user_message,
     get_domain_agent,
-    inject_itinerary_context,
     parse_domain_agent_invoke_result,
 )
-from llm import create_llm, invoke_chat
-from task_planner import TaskPlanner, collect_cities_from_subtasks
-from travel_planning import build_trip_date_anchor_async
+from llm import create_llm, invoke_json
+from memory_adapter import MemoryAdapter
+from task_plan import create_task_plan, survey_facts
 
 load_project_dotenv()
 
-QualityEvaluator = Callable[[str, Any], str]
 
-AGGREGATION_PROMPT = """你是专业的旅行助手。请根据以下信息，针对用户的原始请求生成回复。
+CENTRAL_AGENT_SYSTEM_PROMPT = """你是旅行规划应用的中心编排智能体，负责请求分诊和后续流程控制。
 
-## 用户原始请求
-{user_query}
+## 任务类型判断
+将用户请求分为两类：
 
-## 思维链预调查
-{pre_survey}
+1. 旅行任务
+包括旅行行程规划，以及天气、景点、酒店、餐厅、航班、交通等旅行相关信息查询。这类任务需要后续的事实调查、任务规划、领域智能体分配和执行，不能直接凭模型知识作答。
 
-## 检索到的长期记忆
-{memories}
+2. 非旅行任务
+包括问候、写作、编程、常识问答、数学计算以及与旅行无关的信息查询。这类任务不需要启动任务规划或多智能体执行。
 
-## 总体目标
-{total_goal}
+## 处理规则
+1. 如果是非旅行任务：直接使用你自己的通用能力回答；
 
-## 子任务执行结果
-{results}
 
-## 子任务结果字段说明
-每项含 `tool_data`（工具原始 JSON，唯一可信事实来源）与 `agent_summary_note`（领域 Agent 文字说明，仅供参考）。若二者冲突，必须以 `tool_data` 为准。
+2. 如果是旅行任务：
+   - 不要直接生成最终答案；
+   - 将任务交给后续流程：先完成事实调查、任务拆解和依赖分析，再匹配领域智能体，最后按执行计划调用领域智能体；
+   - response 字段留空，等待后续流程生成最终答案。
 
-## 要求
-1. 综合所有子任务中 tool_data 已返回的真实字段。
-2. 严格匹配用户请求范围，不擅自扩展。
-3. 某类 tool_data 为空时说明缺失，不编造 POI、价格、天气或时刻表。
-4. 使用中文，语气友好专业。
-5. 使用已给出和工具返回的日期，不臆造年份。
-6. 不得引用 tool_data 中不存在的事实。
-7. 数据质量为 error、empty 或 invalid_poi 时明确说明工具未返回有效数据。
-8. 酒店或餐厅名称为行政区划名等明显无效 POI 时不得写入推荐列表。
-9. 天气工具失败时不得输出具体气温或降水概率。
-10. 工具数据缺失时只说明缺失并给出补查建议。
+## 输出格式
+只输出 JSON 对象，不要输出解释文字：
+
+非旅行任务：
+{"route": "direct", "response": "直接给用户的完整回答"}
+
+旅行任务：
+{"route": "travel", "response": ""}
 """
-
-
-def is_single_direct_response(results: Dict[str, Any]) -> bool:
-    """Return whether exactly one subtask should answer directly."""
-    return len(results) == 1
 
 
 def direct_response_from_results(results: Dict[str, Any]) -> str:
@@ -82,116 +88,6 @@ def direct_response_from_results(results: Dict[str, Any]) -> str:
     if tool_data is not None:
         return json.dumps(tool_data, ensure_ascii=False, indent=2)
     return json.dumps(result, ensure_ascii=False, indent=2)
-
-
-def format_results_for_aggregation(
-    results: Dict[str, Any],
-    *,
-    quality_evaluator: QualityEvaluator,
-    summary_max_chars: int = 400,
-) -> str:
-    """Serialize subtask results with their quality markers.
-
-    Args:
-        results: Mapping from task ID to normalized subtask result.
-        quality_evaluator: Callable resolving an agent's quality policy.
-        summary_max_chars: Maximum retained length of each agent summary.
-
-    Returns:
-        A JSON string containing tool data, quality markers, and summaries.
-    """
-    blocks = []
-    for task_id, result in results.items():
-        if not isinstance(result, dict):
-            blocks.append({"task_id": task_id, "raw": result})
-            continue
-        agent_name = result.get("agent", "")
-        tool_data = result.get("tool_data")
-        summary = (result.get("agent_summary") or "").strip()
-        if len(summary) > summary_max_chars:
-            summary = summary[:summary_max_chars] + "…"
-        quality = quality_evaluator(agent_name, tool_data)
-        summary_note = summary or "（无文字总结，请以 tool_data 为准）"
-        if quality != "ok":
-            summary_note = "（该子任务工具未返回有效数据，请忽略文字补充，仅以 tool_data 错误信息为准）"
-        blocks.append(
-            {
-                "task_id": task_id,
-                "agent": agent_name,
-                "data_quality": quality,
-                "tool_data": tool_data,
-                "agent_summary_note": summary_note,
-            }
-        )
-    return json.dumps(blocks, ensure_ascii=False, indent=2)
-
-
-def format_date_anchor_constraint(date_anchor: Dict[str, Any] | None) -> str:
-    """Build the hard date constraint used during final aggregation."""
-    if not date_anchor:
-        return ""
-    trip_dates = date_anchor.get("trip_dates") or []
-    trip_range = date_anchor.get("trip_range") or (
-        trip_dates[0] if trip_dates else ""
-    )
-    dates_line = ", ".join(trip_dates) if trip_dates else "（未解析）"
-    return (
-        "\n\n## 日期约束（必须遵守，优于 pre_survey 中的任何示例年份）\n"
-        f"- 今天是 {date_anchor.get('today')}\n"
-        f"- 本请求出行日期: {trip_range}（{dates_line}）\n"
-        "- 用户说的「下周/明天」等相对日期，只使用上述日期，禁止推断为 2024 或其他年份\n"
-        "- 子任务 tool_data 中的日期若与上述一致，视为正确；不要捏造「系统时间基准与用户不一致」类说法\n"
-        "- 无 tool_data 支撑时说明缺失，不要用其他年份的数据填补"
-    )
-
-
-def build_aggregation_prompt(
-    *,
-    user_query: str,
-    execution_plan: Dict[str, Any],
-    results: Dict[str, Any],
-    quality_evaluator: QualityEvaluator,
-    recent_dialogue: str = "",
-    date_anchor: Dict[str, Any] | None = None,
-) -> str:
-    """Build the final aggregation task prompt.
-
-    Args:
-        user_query: Original user request.
-        execution_plan: Planner output containing goals and context.
-        results: Completed subtask results.
-        quality_evaluator: Callable resolving an agent's quality policy.
-        recent_dialogue: Optional recent conversation history.
-        date_anchor: Optional authoritative trip-date context.
-
-    Returns:
-        A complete task prompt for the final aggregation model.
-    """
-    query_for_agg = execution_plan.get("enriched_query") or user_query
-    anchor = date_anchor or execution_plan.get("date_anchor")
-    prompt = AGGREGATION_PROMPT.format(
-        user_query=query_for_agg,
-        pre_survey=json.dumps(
-            execution_plan.get("pre_survey", {}),
-            ensure_ascii=False,
-            indent=2,
-        ),
-        memories=json.dumps(
-            execution_plan.get("retrieved_memories", []),
-            ensure_ascii=False,
-            indent=2,
-        ),
-        total_goal=execution_plan.get("total_goal", ""),
-        results=format_results_for_aggregation(
-            results,
-            quality_evaluator=quality_evaluator,
-        ),
-    )
-    prompt += format_date_anchor_constraint(anchor)
-    dialogue = (recent_dialogue or "").strip()
-    if dialogue:
-        prompt += f"\n\n## 本线程最近对话（Chapter-3 短期记忆）\n{dialogue}"
-    return prompt
 
 
 async def run_task_layer(
@@ -237,46 +133,15 @@ async def run_task_layer(
     return results
 
 
-def build_central_agent_system_prompt(agent_registry: DomainAgentRegistry) -> str:
-    """Build the orchestration role prompt from the live capability catalog.
-
-    Args:
-        agent_registry: Registry containing the currently available domain agents.
-
-    Returns:
-        A system prompt describing the central orchestration role and workflow.
-    """
-    agent_catalog = agent_registry.get_all_agents_text()
-    return f"""你是「旅行规划中心智能体」，负责协调以下能力：
-
-## 1. 思维链预调查
-在正式规划前，将请求信息分为已给出事实、需要查阅的事实、需要推导的事实和有根据的猜测。
-
-## 2. 长期记忆
-检索与用户偏好相关的历史记忆，并禁止编造未检索到的内容。
-
-## 3. 任务拆解与依赖排序
-按领域智能体能力拆解子任务，根据技能输入、输出定义识别依赖并生成执行顺序。
-
-## 4. 可用领域智能体
-{agent_catalog}
-
-## 工作流程
-用户请求 → 预调查 → 记忆检索 → 任务拆解 → 依赖排序 → 领域智能体调度 → 聚合回复 → 写入记忆
-
-作为中心控制器，你需要确保每个子任务由正确的领域智能体执行，并将结果综合为用户可读的旅行规划。
-"""
-
-
 class CentralOrchestrator:
     """Coordinate the complete centralized travel-planning workflow."""
 
     def __init__(self, llm: Optional[ChatOpenAI] = None, enable_memory: bool = True) -> None:
-        """Initialize the model, planner, agent registry, and optional memory."""
+        """Initialize the model, planner dependencies, router, and memory."""
         self.llm = llm or create_llm()
         self.agent_registry = DomainAgentRegistry()
-        self.planner = TaskPlanner(self.llm, self.agent_registry)
-        self.system_prompt = build_central_agent_system_prompt(self.agent_registry)
+        self.agent_routing = AgentRouter(self.llm, self.agent_registry)
+        self.system_prompt = CENTRAL_AGENT_SYSTEM_PROMPT
 
         self.memory_adapter: Optional[MemoryAdapter] = None
         if enable_memory:
@@ -297,57 +162,70 @@ class CentralOrchestrator:
         kwargs.setdefault("flush", True)
         print(*args, **kwargs)
 
-    def _apply_date_anchor_to_subtasks(
-        self,
-        execution_plan: Dict[str, Any],
-        date_anchor: Dict[str, Any],
-    ) -> None:
-        """按 Agent inputSchema 通用注入统一出行日期 params。"""
-        trip_dates = date_anchor.get("trip_dates") or []
-        if not trip_dates:
-            return
-        all_cities = collect_cities_from_subtasks(execution_plan.get("subtasks", []))
-        for st in execution_plan.get("subtasks", []):
-            agent = st.get("agent", "")
-            input_fields = self.agent_registry.get_agent_input_fields(agent)
-            params = dict(st.get("params") or {})
-
-            if "dates" in input_fields:
-                params.setdefault("dates", trip_dates)
-            if "date" in input_fields:
-                params.setdefault("date", date_anchor["trip_dates"][0])
-            if "days" in input_fields:
-                params.setdefault("days", len(trip_dates))
-            if "cities" in input_fields and all_cities:
-                params.setdefault("cities", all_cities)
-
-            st["params"] = params
-
-    async def process_request(self, user_query: str, thread_id: str = "default") -> Dict[str, Any]:
-        """Execute the full centralized workflow for one user request.
+    async def decide_request_route(self, user_query: str) -> Dict[str, str]:
+        """Classify a request and answer directly when it is not travel-related.
 
         Args:
-            user_query: Natural-language travel request.
+            user_query: Original user request.
+
+        Returns:
+            A dictionary containing ``route`` set to ``direct`` or ``travel``
+            and the direct response when applicable.
+        """
+        decision = await invoke_json(
+            self.llm,
+            user_query,
+            system_prompt=self.system_prompt,
+            require_object=True,
+        )
+        route = str(decision.get("route") or "").strip()
+        response = str(decision.get("response") or "").strip()
+        if route == "direct":
+            if not response:
+                raise ValueError("Direct route requires a non-empty response.")
+            return {"route": route, "response": response}
+        if route == "travel":
+            return {"route": route, "response": ""}
+        raise ValueError(f"Unsupported request route: {route!r}")
+
+    async def process_request(self, user_query: str, thread_id: str = "default") -> Dict[str, Any]:
+        """Execute request classification and, when needed, travel planning.
+
+        Args:
+            user_query: Natural-language user request.
             thread_id: Conversation identifier used for memory and checkpoints.
 
         Returns:
-            A dictionary containing the execution plan, subtask results, and
-            final response.
+            A dictionary containing the route, execution plan, subtask results,
+            and final response.
         """
         self._log("=" * 80)
         self._log(f"📥 用户请求: {user_query.strip()}")
         self._log("=" * 80)
 
-        date_anchor = await build_trip_date_anchor_async(user_query, llm=self.llm)
-        enriched_query = f"{user_query.strip()}\n\n{date_anchor['anchor_block']}"
-        self._log(
-            f"\n📅 日期锚定: 今天 {date_anchor['today']}；"
-            f"出行 {date_anchor['trip_range']}（{', '.join(date_anchor['trip_dates'])}）"
-        )
-        # --- Chapter-2: 思维链预调查 ---
+        # Request routing: classify direct versus travel requests before planning.
+        self._log("\n🧭 [中心编排] 判断请求类型...")
+        request_route = await self.decide_request_route(user_query)
+        if request_route["route"] == "direct":
+            final_response = request_route["response"]
+            self._log("✓ 非旅行任务，直接回复")
+            self._log("\n" + "=" * 80)
+            self._log("📋 最终回复")
+            self._log("=" * 80)
+            self._log(final_response)
+            self._log("=" * 80)
+            return {
+                "route": "direct",
+                "execution_plan": None,
+                "subtask_results": {},
+                "final_response": final_response,
+            }
+        self._log("✓ 旅行任务，进入多智能体编排流程")
+
+        # Fact survey: reuse the Chapter 2 structured fact-survey framework.
         self._log("\n🔍 [Ch2] 思维链预调查...")
         try:
-            pre_survey = await self.planner.run_pre_survey(enriched_query)
+            pre_survey = await survey_facts(self.llm, user_query)
         except Exception as exc:
             self._log(f"⚠️ 预调查失败，已回退简化预调查: {type(exc).__name__}: {exc}")
             pre_survey = {
@@ -355,82 +233,120 @@ class CentralOrchestrator:
                 "facts_to_lookup": [],
                 "facts_to_derive": [],
                 "educated_guesses": [],
-                "trip_cities": [],
-                "trip_dates": date_anchor.get("trip_dates") or [],
                 "raw_text": user_query.strip(),
             }
         self._log("✓ 预调查完成")
         self._log(json.dumps({k: v for k, v in pre_survey.items() if k != "raw_text"}, ensure_ascii=False, indent=2))
 
-        # --- Chapter-3: 长期记忆检索 ---
+        # Memory retrieval: reuse the Chapter 3 long-term memory search.
         memories: List[Dict[str, Any]] = []
         if self.memory_adapter:
-            hits = await self.memory_adapter.search_memories_async(user_query)
-            memories = self.memory_adapter.format_memories_for_plan(hits)
-            self._log(f"\n🧠 [Ch3] 检索到 {len(memories)} 条相关记忆")
-            if memories:
-                self._log(json.dumps(memories, ensure_ascii=False, indent=2))
-            else:
-                self._log("  （暂无历史记忆，将仅使用当前对话信息）")
+            try:
+                hits = await self.memory_adapter.search_memories_async(user_query)
+                memories = self.memory_adapter.format_memories_for_plan(hits)
+                self._log(f"\n🧠 [Ch3] 检索到 {len(memories)} 条相关记忆")
+                if memories:
+                    self._log(json.dumps(memories, ensure_ascii=False, indent=2))
+                else:
+                    self._log("  （暂无历史记忆，将仅使用当前对话信息）")
+            except Exception as exc:
+                self._log(
+                    f"\n⚠️ [Ch3] 记忆检索失败，继续无记忆执行: "
+                    f"{type(exc).__name__}: {exc}"
+                )
 
-        # --- Chapter-4 + 路由: 拆解 → 依赖 → 选 Agent ---
-        self._log("\n📋 [Ch4] 任务拆解 → 依赖分析 → 领域智能体路由...")
-        execution_plan = await self.planner.build_execution_plan(enriched_query, pre_survey, memories)
-        execution_plan["date_anchor"] = date_anchor
-        execution_plan["enriched_query"] = enriched_query
-        self._apply_date_anchor_to_subtasks(execution_plan, date_anchor)
+        # Task planning: reuse Chapter 4 decomposition and dependency analysis.
+        self._log("\n📋 [Ch4] 任务拆解 → 依赖分析 → 执行顺序...")
+        task_plan = await create_task_plan(
+            self.llm,
+            user_query,
+            pre_survey,
+            memories,
+            self.agent_registry,
+        )
+        self._log(
+            f"✓ 共 {len(task_plan['tasks'])} 个任务，"
+            f"执行顺序: {' → '.join(task_plan['execution_order'])}"
+        )
+
+        # Agent routing: assign one domain agent and tool parameters per task.
+        self._log("\n🧩 分配领域智能体...")
+        depends_map = {
+            task["task_id"]: list(task.get("depends_on") or [])
+            for task in task_plan["tasks"]
+        }
+        assigned_tasks = await self.agent_routing.route_to_agents(
+            task_plan["tasks"],
+            task_plan["execution_order"],
+            depends_map,
+            pre_survey,
+        )
+        execution_plan = {
+            "pre_survey": task_plan["pre_survey"],
+            "pre_survey_raw": task_plan["pre_survey_raw"],
+            "retrieved_memories": task_plan["retrieved_memories"],
+            "total_goal": task_plan["total_goal"],
+            "plan_fallback": task_plan["plan_fallback"],
+            "subtasks": assigned_tasks,
+            "execution_order": task_plan["execution_order"],
+        }
         self._log(f"✓ 共 {len(execution_plan['subtasks'])} 个子任务")
         self._log(f"  执行顺序: {' → '.join(execution_plan['execution_order'])}")
-        cv = execution_plan.get("city_validation") or {}
-        if cv.get("expected_cities"):
-            self._log(
-                f"  城市校验: 预调查={cv.get('expected_cities')} "
-                f"对齐={cv.get('aligned')} "
-                f"补全={cv.get('patched')}"
-                + (f" 缺失={cv.get('missing_cities')}" if cv.get("missing_cities") else "")
-            )
         self._log(json.dumps(execution_plan, ensure_ascii=False, indent=2))
 
-        # --- Chapter-5 扩展: 领域智能体执行 ---
+        # Domain execution: reuse Chapter 5 search capabilities through agents.
         self._log("\n⚙️ [Ch5+] 执行领域智能体...")
         run_tag = uuid.uuid4().hex[:8]
-        subtask_results = await self._execute_subtasks(
+        subtask_results = await self.execute_plan(
             execution_plan,
             thread_id,
-            date_anchor,
             run_tag,
         )
 
-        # --- 聚合最终回复 ---
-        self._log("\n📝 聚合结果，生成最终旅行规划...")
-        final_response = await self._aggregate_results(
-            user_query, execution_plan, subtask_results, thread_id
+        # Final response: select the planned itinerary result from task outputs.
+        self._log("\n📝 生成最终旅行规划...")
+        final_response = self.compose_final_response(
+            subtask_results,
+            execution_plan.get("execution_order", []),
         )
 
-        # --- Chapter-3: 写入记忆 ---
+        # Memory write: reuse the Chapter 3 turn and preference ingestion flow.
         if self.memory_adapter:
-            self.memory_adapter.record_turn(thread_id, user_query, final_response)
-            await self.memory_adapter.ingest(
-                f"用户请求: {user_query.strip()}\n偏好摘要: {final_response[:500]}",
-                memory_type="preference",
-            )
+            try:
+                self.memory_adapter.record_turn(
+                    thread_id,
+                    user_query,
+                    final_response,
+                )
+                await self.memory_adapter.ingest(
+                    f"用户请求: {user_query.strip()}\n"
+                    f"偏好摘要: {final_response[:500]}",
+                    memory_type="preference",
+                )
+            except Exception as exc:
+                self._log(
+                    f"⚠️ [Ch3] 记忆写入失败，不影响本次回复: "
+                    f"{type(exc).__name__}: {exc}"
+                )
 
         self._log("\n" + "=" * 80)
         self._log("✅ 全部处理完成")
         self._log("=" * 80)
 
         return {
+            "route": "travel",
             "execution_plan": execution_plan,
             "subtask_results": subtask_results,
             "final_response": final_response,
         }
 
-    async def _execute_subtasks(
+    async def execute_plan(
         self,
         execution_plan: Dict[str, Any],
         thread_id: str,
-        date_anchor: Dict[str, Any],
         run_tag: str,
+        *,
+        message_records: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Execute all planned subtasks layer by layer."""
         results: Dict[str, Any] = {}
@@ -445,8 +361,8 @@ class CentralOrchestrator:
                     subtasks[tid],
                     results,
                     thread_id,
-                    date_anchor,
                     run_tag,
+                    message_records,
                 ),
                 is_parallel_safe=self.agent_registry.is_parallel_safe,
             )
@@ -480,8 +396,8 @@ class CentralOrchestrator:
         task: Dict[str, Any],
         prior_results: Dict[str, Any],
         thread_id: str,
-        date_anchor: Dict[str, Any],
         run_tag: str,
+        message_records: Optional[List[Dict[str, Any]]],
     ) -> Any:
         """Invoke one routed domain agent and parse its structured result."""
         task_id = task["task_id"]
@@ -494,6 +410,7 @@ class CentralOrchestrator:
             self._log(f"     {description[:60]}...")
             return {
                 "task_id": task_id,
+                "task_description": description,
                 "agent": None,
                 "tool_data": {"error": err, "message": "子任务未由路由 LLM 成功分配 Agent"},
                 "agent_summary": "",
@@ -502,67 +419,87 @@ class CentralOrchestrator:
         self._log(f"\n  🔄 {task_id}: {description[:60]}...")
         self._log(f"     → {agent_name}")
 
-        task = inject_itinerary_context(task, prior_results)
         user_message = build_domain_agent_user_message(task, prior_results)
-        user_message = f"{user_message}\n\n{date_anchor['anchor_block']}"
-        agent = get_domain_agent(agent_name)
+        if message_records is not None:
+            message_records.append(
+                {
+                    "task_id": task_id,
+                    "agent": agent_name,
+                    "message": user_message,
+                }
+            )
         agent_thread = f"{thread_id}_{run_tag}_{task_id}"
-        state = await agent.ainvoke(
-            {"messages": [("user", user_message)]},
-            {"configurable": {"thread_id": agent_thread}},
-        )
-
-        result = parse_domain_agent_invoke_result(
-            state,
-            task_id=task_id,
-            agent_name=agent_name,
-        )
+        try:
+            agent = get_domain_agent(agent_name)
+            state = await agent.ainvoke(
+                {"messages": [("user", user_message)]},
+                {"configurable": {"thread_id": agent_thread}},
+            )
+            result = parse_domain_agent_invoke_result(
+                state,
+                task_id=task_id,
+                agent_name=agent_name,
+            )
+            result["task_description"] = description
+        except Exception as exc:
+            self._log(
+                f"     ✗ 失败: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            result = {
+                "task_id": task_id,
+                "task_description": description,
+                "agent": agent_name,
+                "tool_data": {
+                    "error": "domain_agent_failed",
+                    "message": f"{type(exc).__name__}: {exc}",
+                },
+                "agent_summary": "",
+            }
 
         self._log(f"     ✓ 完成")
         self._log("     " + "-" * 56)
-        for line in self._format_result(result).splitlines():
+        try:
+            rendered_result = json.dumps(result, ensure_ascii=False, indent=2)
+        except (TypeError, ValueError):
+            rendered_result = str(result)
+        for line in rendered_result.splitlines():
             self._log(f"     {line}")
         self._log("     " + "-" * 56)
         return result
 
-    def _format_result(self, result: Any) -> str:
-        """Format a subtask result for readable execution logs."""
-        try:
-            return json.dumps(result, ensure_ascii=False, indent=2)
-        except (TypeError, ValueError):
-            return str(result)
-
-    async def _aggregate_results(
+    def compose_final_response(
         self,
-        user_query: str,
-        execution_plan: Dict[str, Any],
         results: Dict[str, Any],
-        thread_id: str,
+        execution_order: List[str],
     ) -> str:
-        """Build the final response from direct or aggregated subtask results."""
-        if is_single_direct_response(results):
+        """Select the final response from direct or ordered task results."""
+        is_single_result = len(results) == 1
+        if is_single_result:
             final_text = direct_response_from_results(results)
-            self._log("  ✓ 单任务查询，直接使用领域智能体回复（跳过旅行规划聚合）")
+            self._log("  ✓ 单任务查询，直接使用领域智能体回复")
         else:
-            recent_dialogue = ""
-            if self.memory_adapter:
-                recent_dialogue = self.memory_adapter.short_term.format_recent(thread_id)
-                self._log("  🧠 聚合使用 AGGREGATION_PROMPT + 长期/短期记忆上下文")
-            prompt = build_aggregation_prompt(
-                user_query=user_query,
-                execution_plan=execution_plan,
-                results=results,
-                recent_dialogue=recent_dialogue,
-                date_anchor=execution_plan.get("date_anchor"),
-                quality_evaluator=self.agent_registry.evaluate_result,
+            final_result = next(
+                (
+                    results[task_id]
+                    for task_id in reversed(execution_order)
+                    if isinstance(results.get(task_id), dict)
+                    and (results[task_id].get("agent_summary") or "").strip()
+                ),
+                None,
             )
-            final_text = await invoke_chat(
-                self.llm,
-                prompt,
-                system_prompt=self.system_prompt,
-            )
+            if final_result:
+                final_text = final_result["agent_summary"].strip()
+            else:
+                summaries = [
+                    (result.get("agent_summary") or "").strip()
+                    for result in results.values()
+                    if isinstance(result, dict)
+                    and (result.get("agent_summary") or "").strip()
+                ]
+                final_text = "\n\n".join(summaries) or "未获得可用的领域结果。"
 
-        title = "📋 最终回复" if is_single_direct_response(results) else "📋 最终旅行规划"
+        title = "📋 最终回复" if is_single_result else "📋 最终旅行规划"
         self._log("\n" + "=" * 80)
         self._log(title)
         self._log("=" * 80)
@@ -576,7 +513,7 @@ async def main() -> None:
     orchestrator = CentralOrchestrator()
     query = """
 你能帮我规划一个五一假期的多城市旅行吗？我还没想好行程顺序……
-大概是上海、苏州、杭州这几个地方？需要包含行程路线、酒店推荐、
+我想从北京出发，大概是上海、苏州、杭州这几个地方？需要包含行程路线、酒店推荐、
 天气情况和美食攻略。我喜欢住安静的酒店，预算每晚不超过800元。
 """
     result = await orchestrator.process_request(query, thread_id="central_orchestration")

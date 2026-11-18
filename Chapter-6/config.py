@@ -1,7 +1,15 @@
-"""Path and environment bootstrap for Chapter 6.
+"""Centralized path and environment bootstrap for Chapter 6.
 
-This module is the single source of chapter paths and project-level ``.env``
-loading.
+This module defines the chapter's canonical directory constants, registers the
+repository root and the Chapter 2/5 directories on ``sys.path``, and loads the
+repository-level and chapter-level ``.env`` files. Other Chapter 6 modules use
+these constants and loading helpers instead of constructing paths locally.
+
+Main responsibilities:
+
+- Provide shared paths for Chapter 6, Chapter 2, Chapter 5, and Chroma storage.
+- Make cross-chapter imports resolve consistently from notebooks and scripts.
+- Load model, search, and memory configuration from the expected ``.env`` files.
 
 :author: zhanghong, liuhui
 :date: 2026-11-16
@@ -17,12 +25,15 @@ from dotenv import load_dotenv
 
 CH6_DIR = Path(__file__).resolve().parent
 BOOK_ROOT = CH6_DIR.parent
+CH2_DIR = BOOK_ROOT / "Chapter-2"
 CH5_DIR = BOOK_ROOT / "Chapter-5"
 CHROMA_DIR = CH6_DIR / "chroma_memory"
 CH6_ENV_FILE = CH6_DIR / ".env"
 BOOK_ENV_FILE = BOOK_ROOT / ".env"
 if str(BOOK_ROOT) not in sys.path:
     sys.path.insert(0, str(BOOK_ROOT))
+if str(CH2_DIR) not in sys.path:
+    sys.path.insert(0, str(CH2_DIR))
 if str(CH5_DIR) not in sys.path:
     sys.path.insert(0, str(CH5_DIR))
 
