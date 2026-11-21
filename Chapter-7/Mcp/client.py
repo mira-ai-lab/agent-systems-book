@@ -7,7 +7,6 @@ Reference:
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any, Dict, Optional
 
@@ -96,13 +95,8 @@ async def fetch_hotels_via_mcp(
         }
     except Exception as exc:
         print(f"[hotel-Mcp] 查询失败: {exc}", flush=True)
-        print(f"[hotel-Mcp] 请先启动服务: python server.py  ({mcp_url()})", flush=True)
+        print(
+            f"[hotel-Mcp] 请确认 MCP Server 已启动且端点可达: {mcp_url()}",
+            flush=True,
+        )
         return None
-
-
-if __name__ == "__main__":
-    data = asyncio.run(
-        fetch_hotels_via_mcp("大同", preferences="近景区")
-    )
-    if data:
-        print(json.dumps(data, ensure_ascii=False, indent=2))
