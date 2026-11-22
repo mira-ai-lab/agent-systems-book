@@ -1,4 +1,13 @@
-"""Reusable helpers for connecting to external stdio MCP servers."""
+"""Reusable helpers for connecting to external stdio MCP servers.
+
+Main capabilities:
+
+- Start external stdio MCP servers from a command and argument list.
+- Discover and load tools from an external MCP server.
+
+:author: zhanghong, liuhui
+:date: 2026-11-22
+"""
 
 from __future__ import annotations
 

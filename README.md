@@ -18,7 +18,7 @@ agent-systems-book/
 │   └── orchestrator.py     # 中心编排器入口
 ├── Chapter-7/            # 协议化协作
 │   ├── A2A/              # Agent-to-Agent（HTTP 远程 Agent + Supervisor）
-│   └── Mcp/              # Model Context Protocol（HTTP/SSE 工具服务）
+│   └── Mcp/              # Model Context Protocol（Streamable HTTP 工具服务）
 ├── Chapter-8/            # 旅行多智能体工程化整合（LangGraph 固定图 + 可观测性）
 │   ├── travel_multi_agent/   # Python 包（domain / agents / orchestration / tracing）
 │   ├── scripts/          # run_demo.py（支持 --stream）、show_graph.py
@@ -47,8 +47,8 @@ agent-systems-book/
 | **Chapter-4** | 任务分解、依赖图排序 | `task_decomposition_and_planning.ipynb` |
 | **Chapter-5** | `@tool` + LangChain 酒店 Agent | `hotel_recommendation.ipynb` |
 | **Chapter-6** | 中心控制器 + 6 个子智能体 | 见下方「Chapter-6 快速开始」 |
-| **Chapter-7 A2A** | 远程 Agent 协议 + Supervisor 调度 | `A2A/supervisor_local.py` |
-| **Chapter-7 MCP** | 酒店工具 MCP Server（SSE） | `Mcp/hotel_mcp_server.py` |
+| **Chapter-7 A2A** | 远程 Agent 协议 + Supervisor 调度 | `A2A/supervisor.py` |
+| **Chapter-7 MCP** | 酒店工具 MCP Server（Streamable HTTP） | `Mcp/server.py` |
 | **Chapter-8** | Ch2–5 能力整合 + LangGraph 固定图 + Tracing | `scripts/run_demo.py --stream` |
 | **Chapter-9** | OpenTelemetry 轨迹 → Who&When → 失败归因 | `testdata/convert_spans_to_whowhen.py` |
 | **Chapter-11** | Router + 域插件 + HTTP API + Web Demo + TextGrad | `scripts/run_demo.py --domain travel --stream` |
@@ -117,7 +117,7 @@ uv pip install -e "./Chapter-11[evolution]"          # 可选：TextGrad prompt 
 Chapter-7 A2A / MCP 需安装对应目录下的 `requirements.txt`（含 `a2a-sdk`、`mcp` 等），例如：
 
 ```bash
-uv pip install -r Chapter-7/A2A/hotel_recommendation_agent/requirements.txt
+uv pip install -r Chapter-7/A2A/requirements.txt
 uv pip install -r Chapter-7/Mcp/requirements.txt
 ```
 
@@ -260,6 +260,11 @@ pre_survey → retrieve_memory → build_plan → execute_layer → aggregate �
 
 ## Chapter-7 快速开始
 
+本章两个主 Notebook：
+
+- [Chapter-7/01_mcp_tool_calling.ipynb](Chapter-7/01_mcp_tool_calling.ipynb)：MCP 远程化工具。
+- [Chapter-7/02_a2a_agent_collaboration.ipynb](Chapter-7/02_a2a_agent_collaboration.ipynb)：A2A 远程化智能体。
+
 ### A2A：远程 Agent + Supervisor
 
 ```powershell
@@ -269,26 +274,24 @@ python server.py --host 127.0.0.1 --port 9012
 
 # 终端 2：连通性测试
 cd Chapter-7/A2A
-python check_a2a_call.py --timing
+python check.py --timing
 
 # 终端 3：Supervisor 调度远程 A2A
-python supervisor_local.py
+python supervisor.py
 ```
 
-书稿注释版入口：`Chapter-7/A2A/book/supervisor_local_book.py`
+书稿注释版入口：`Chapter-7/A2A/supervisor_annotated.py`
 
-说明见 [Chapter-7/A2A/hotel_recommendation_agent/README.md](Chapter-7/A2A/hotel_recommendation_agent/README.md)
+说明见 [Chapter-7/A2A/README.md](Chapter-7/A2A/README.md)
 
-### MCP：HTTP/SSE 工具服务
+### MCP：Streamable HTTP 工具服务
 
 ```powershell
-# 终端 1：启动 MCP Server
-cd Chapter-7/Mcp
-python hotel_mcp_server.py
-
-# 终端 2：客户端演示
-python hotel_recommendation_demo_mcp.py
+cd Chapter-7
+# 打开 01_mcp_tool_calling.ipynb 并按顺序执行
 ```
+
+Notebook 会在 Part I 中启动 `server.py` 定义的 MCP Server，并在结束单元关闭服务；脚本版仍可按 `Mcp/README.md` 分终端运行。
 
 说明见 [Chapter-7/Mcp/README.md](Chapter-7/Mcp/README.md)
 
@@ -409,7 +412,7 @@ A：Chapter-6 固定使用 Chroma，持久化到 `Chapter-6/chroma_memory/`；Ch
 | [.env.example](.env.example) | 全部环境变量说明与申请链接 |
 | [Chapter-6/README.md](Chapter-6/README.md) | 中心控制器编排与子智能体 |
 | [Chapter-8/README.md](Chapter-8/README.md) | 工程化多智能体包、Tracing、运行与 API |
-| [Chapter-7/A2A/hotel_recommendation_agent/README.md](Chapter-7/A2A/hotel_recommendation_agent/README.md) | A2A 服务启动与测试 |
+| [Chapter-7/A2A/README.md](Chapter-7/A2A/README.md) | A2A 服务、协议测试与 Supervisor |
 | [Chapter-7/Mcp/README.md](Chapter-7/Mcp/README.md) | MCP Server / Client |
 | [Chapter-9/testdata/README.md](Chapter-9/testdata/README.md) | 轨迹转换与 AutoFA 失败归因 |
 | [Chapter-11/README.md](Chapter-11/README.md) | Router SDK、域插件、API、Web Demo、TextGrad（含书稿第 10 章自演化） |

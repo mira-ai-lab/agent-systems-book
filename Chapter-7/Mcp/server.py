@@ -1,5 +1,10 @@
 """Streamable HTTP MCP server exposing one reusable hotel tool.
 
+Main capabilities:
+
+- Register the Chapter-6 hotel tool as an MCP tool.
+- Expose it through the MCP Streamable HTTP transport.
+
 启动（默认 http://127.0.0.1:8765/mcp）：
   python server.py
 
@@ -12,6 +17,9 @@ Official references:
   https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
   MCP 2025-11-25 Tools:
   https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+
+:author: zhanghong, liuhui
+:date: 2026-11-22
 """
 
 from __future__ import annotations

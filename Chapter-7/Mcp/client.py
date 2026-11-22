@@ -1,8 +1,16 @@
 """Streamable HTTP MCP client for the local hotel tool server.
 
+Main capabilities:
+
+- Connect to the local Streamable HTTP MCP endpoint.
+- Discover and call the published hotel recommendation tool.
+
 Reference:
   MCP 2025-11-25 Transports:
   https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
+
+:author: zhanghong, liuhui
+:date: 2026-11-22
 """
 
 from __future__ import annotations

@@ -3,6 +3,14 @@
 Chapter 7 reuses the hotel search implementation from Chapter 5 and the
 HotelAgent capability from Chapter 6. This module is the only place that
 registers those cross-chapter paths and loads the project environment.
+
+Main capabilities:
+
+- Register Chapter-5 and Chapter-6 import paths.
+- Load the shared project environment for the MCP server and client.
+
+:author: zhanghong, liuhui
+:date: 2026-11-22
 """
 
 from __future__ import annotations
