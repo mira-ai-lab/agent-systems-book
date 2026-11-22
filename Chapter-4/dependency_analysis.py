@@ -1,10 +1,11 @@
 """Reusable dependency analysis for later book chapters.
 
 This module asks a model for subtask dependencies, validates the dependency
-graph, and returns a dependency-safe execution order. The Chapter 4 notebook
-does not import it.
+graph, and returns a dependency-safe execution order. It also hosts the
+shared validators reused by conflict replanning and travel plan generation.
+The Chapter 4 notebook does not import it.
 
-:author: zhanghong, liuhui
+:author: zhanghong, liuhui, wulin
 :date: 2026-11-16
 """
 
@@ -128,6 +129,93 @@ def build_topological_order(
     return ordered
 
 
+def require_text(value: Any, field_name: str) -> str:
+    """Return one stripped non-empty string or raise a descriptive error."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return value.strip()
+
+
+def normalize_string_list(value: Any, field_name: str) -> List[str]:
+    """Validate a list containing unique non-empty strings."""
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+
+    normalized: List[str] = []
+    for item in value:
+        text = require_text(item, f"{field_name} item")
+        if text in normalized:
+            raise ValueError(f"{field_name} contains duplicate value: {text}")
+        normalized.append(text)
+    return normalized
+
+
+def normalize_dependencies(
+    value: Any,
+    task_ids: List[str],
+) -> Dict[str, List[str]]:
+    """Validate a complete dependency mapping against the current tasks."""
+    if not isinstance(value, dict):
+        raise ValueError("depends_on must be an object")
+
+    expected = set(task_ids)
+    actual = {
+        require_text(task_id, "depends_on task_id")
+        for task_id in value
+    }
+    missing = sorted(expected - actual)
+    unknown = sorted(actual - expected)
+    if missing or unknown:
+        raise ValueError(
+            "depends_on must exactly cover all tasks; "
+            f"missing={missing}, unknown={unknown}"
+        )
+
+    dependencies: Dict[str, List[str]] = {}
+    for task_id in task_ids:
+        values = normalize_string_list(
+            value[task_id],
+            f"depends_on.{task_id}",
+        )
+        if task_id in values:
+            raise ValueError(f"Task {task_id} cannot depend on itself")
+        unknown_dependencies = sorted(set(values) - expected)
+        if unknown_dependencies:
+            raise ValueError(
+                f"Task {task_id} references unknown dependencies: "
+                f"{unknown_dependencies}"
+            )
+        dependencies[task_id] = values
+    return dependencies
+
+
+def read_preferred_order(value: Any, task_ids: List[str]) -> List[str]:
+    """Read a model order as a tie-breaking hint, never as ground truth."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        raw_order = value
+    elif isinstance(value, dict):
+        def order_key(item: Any) -> tuple[int, Any]:
+            text = str(item)
+            return (0, int(text)) if text.isdigit() else (1, text)
+
+        raw_order = [value[key] for key in sorted(value, key=order_key)]
+    else:
+        raise ValueError("execution_order must be a list or object")
+
+    order = [
+        require_text(task_id, "execution_order task_id")
+        for task_id in raw_order
+    ]
+    if len(order) != len(set(order)):
+        raise ValueError("execution_order contains duplicate task IDs")
+    unknown = sorted(set(order) - set(task_ids))
+    if unknown:
+        raise ValueError(f"execution_order references unknown tasks: {unknown}")
+    return order
+
+
 def normalize_dependency_analysis(
     payload: Dict[str, Any],
     task_ids: List[str],
@@ -136,37 +224,18 @@ def normalize_dependency_analysis(
     if not isinstance(payload, dict):
         raise ValueError("Dependency analysis response must be a JSON object")
 
-    valid_ids = set(task_ids)
     raw_dependencies = payload.get("depends_on")
-    dependencies: Dict[str, List[str]] = {task_id: [] for task_id in task_ids}
-    if isinstance(raw_dependencies, dict):
-        for task_id in task_ids:
-            values = raw_dependencies.get(task_id, [])
-            if not isinstance(values, list):
-                continue
-            for value in values:
-                dependency_id = str(value).strip()
-                if (
-                    dependency_id in valid_ids
-                    and dependency_id != task_id
-                    and dependency_id not in dependencies[task_id]
-                ):
-                    dependencies[task_id].append(dependency_id)
+    dependencies = normalize_dependencies(raw_dependencies, task_ids)
 
     raw_order = payload.get("execution_order")
-    if isinstance(raw_order, list):
-        preferred_order = [str(value).strip() for value in raw_order]
-    elif isinstance(raw_order, dict):
-        def order_key(item: Any) -> tuple[int, Any]:
-            text = str(item)
-            return (0, int(text)) if text.isdigit() else (1, text)
-
-        preferred_order = [
-            str(raw_order[key]).strip()
-            for key in sorted(raw_order, key=order_key)
-        ]
-    else:
-        preferred_order = []
+    preferred_order = read_preferred_order(raw_order, task_ids)
+    missing_order_ids = sorted(set(task_ids) - set(preferred_order))
+    unknown_order_ids = sorted(set(preferred_order) - set(task_ids))
+    if missing_order_ids or unknown_order_ids:
+        raise ValueError(
+            "execution_order must exactly cover all tasks; "
+            f"missing={missing_order_ids}, unknown={unknown_order_ids}"
+        )
     execution_order = build_topological_order(
         task_ids,
         dependencies,
