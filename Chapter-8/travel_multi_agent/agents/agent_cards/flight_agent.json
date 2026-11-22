@@ -1,0 +1,19 @@
+{
+  "name": "FlightAgent",
+  "description": "Search for flight information.",
+  "version": "1.0.0",
+  "supportedInterfaces": [
+    { "url": "http://127.0.0.1:9034/", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
+  ],
+  "capabilities": { "streaming": true, "pushNotifications": false },
+  "defaultInputModes": ["text", "text/plain"],
+  "defaultOutputModes": ["text", "text/plain"],
+  "skills": [
+    {
+      "id": "search_flights",
+      "name": "Flight information inquiry",
+      "description": "Search for flight information based on exact date, departure city, and arrival city. Only one flight route can be queried per request.",
+      "tags": ["flight", "input:date", "input:departure", "input:arrival", "output:flights"]
+    }
+  ]
+}

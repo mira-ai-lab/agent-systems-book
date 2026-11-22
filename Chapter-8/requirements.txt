@@ -26,5 +26,15 @@ opentelemetry-api>=1.27.0
 opentelemetry-sdk>=1.27.0
 opentelemetry-exporter-otlp-proto-grpc>=1.27.0
 
-# MCP Server（travel_agent_mcp_server.py，供 Claude Code 调用）
+# MCP 客户端协议（langchain-mcp-adapters 的底层依赖）
 mcp>=1.0.0
+
+# MCP 工具接入（天气 / 百度地图 / 飞常准）
+langchain-mcp-adapters>=0.1.0
+
+# A2A 子智能体服务（复用第 7 章基础设施）
+a2a-sdk>=0.2.0
+uvicorn>=0.30.0
+starlette>=0.37.0
+click>=8.1.0
+protobuf>=4.25.0

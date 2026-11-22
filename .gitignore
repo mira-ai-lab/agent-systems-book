@@ -4,3 +4,10 @@ __pycache__/
 *.py[cod]
 .vscode/
 Chapter-6/chroma_memory/
+
+# Chapter-8 运行时产物
+.pytest_cache/
+*.egg-info/
+chroma_memory/
+traces/
+*.sqlite3

@@ -1,0 +1,19 @@
+{
+  "name": "HotelAgent",
+  "description": "Recommend hotels according to the city.",
+  "version": "1.0.0",
+  "supportedInterfaces": [
+    { "url": "http://127.0.0.1:9032/", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
+  ],
+  "capabilities": { "streaming": true, "pushNotifications": false },
+  "defaultInputModes": ["text", "text/plain"],
+  "defaultOutputModes": ["text", "text/plain"],
+  "skills": [
+    {
+      "id": "recommend_hotel",
+      "name": "Hotel accommodation information inquiry",
+      "description": "Recommend hotels and accommodation based on the city entered by the user. Only one recommendation operation can be performed per request.",
+      "tags": ["hotel", "recommendation", "parallel-safe:false", "input:city", "output:hotels"]
+    }
+  ]
+}

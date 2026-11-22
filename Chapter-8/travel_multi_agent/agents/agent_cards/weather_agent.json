@@ -1,0 +1,19 @@
+{
+  "name": "WeatherAgent",
+  "description": "Inquiry weather forecast according to the date and city.",
+  "version": "1.0.0",
+  "supportedInterfaces": [
+    { "url": "http://127.0.0.1:9031/", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
+  ],
+  "capabilities": { "streaming": true, "pushNotifications": false },
+  "defaultInputModes": ["text", "text/plain"],
+  "defaultOutputModes": ["text", "text/plain"],
+  "skills": [
+    {
+      "id": "search_weather_forecast",
+      "name": "Search the Weather Forecast",
+      "description": "Search for weather forecasts based on the user's input city and exact date.",
+      "tags": ["weather", "forecast", "input:city", "input:date", "output:forecast"]
+    }
+  ]
+}
