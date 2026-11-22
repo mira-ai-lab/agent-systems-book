@@ -1,0 +1,19 @@
+{
+  "name": "RestaurantAgent",
+  "description": "Recommend restaurant according to the location input by the user.",
+  "version": "1.0.0",
+  "supportedInterfaces": [
+    { "url": "http://127.0.0.1:9033/", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
+  ],
+  "capabilities": { "streaming": true, "pushNotifications": false },
+  "defaultInputModes": ["text", "text/plain"],
+  "defaultOutputModes": ["text", "text/plain"],
+  "skills": [
+    {
+      "id": "recommend_restaurant",
+      "name": "Restaurant information recommendation",
+      "description": "Recommend restaurant according to the location input by the user. Only one list of restaurant recommendation can be queried per request.",
+      "tags": ["restaurant", "recommendation", "input:location", "output:restaurants"]
+    }
+  ]
+}

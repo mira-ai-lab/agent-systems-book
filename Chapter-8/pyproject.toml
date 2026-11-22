@@ -30,7 +30,7 @@ dev = ["pytest>=7.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent_framework*", "domains*"]
+include = ["travel_multi_agent*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

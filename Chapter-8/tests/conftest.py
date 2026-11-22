@@ -1,8 +1,11 @@
-"""pytest 全局 fixture。"""
+"""Shared pytest fixtures.
+
+:author: zhanghong, liuhui, xingrui
+:date: 2026-11-22"""
 
 import pytest
 
-from agent_framework.tracing import shutdown_tracing
+from travel_multi_agent.tracing import shutdown_tracing
 
 
 @pytest.fixture(scope="session", autouse=True)

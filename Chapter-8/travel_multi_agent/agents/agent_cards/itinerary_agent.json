@@ -1,0 +1,19 @@
+{
+  "name": "ItineraryAgent",
+  "description": "Plan structured multi-day travel itineraries with clear daily and time-based schedules.",
+  "version": "1.0.0",
+  "supportedInterfaces": [
+    { "url": "http://127.0.0.1:9035/", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
+  ],
+  "capabilities": { "streaming": true, "pushNotifications": false },
+  "defaultInputModes": ["text", "text/plain"],
+  "defaultOutputModes": ["text", "text/plain"],
+  "skills": [
+    {
+      "id": "plan_itinerary",
+      "name": "Itinerary Generation",
+      "description": "Plan comprehensive travel itineraries based on the user's provided departure location, destination, number of days, and other information, covering aspects such as transportation options and must-visit attractions.",
+      "tags": ["itinerary", "planning", "input:departure_city", "input:destination_city", "input:days", "output:itinerary"]
+    }
+  ]
+}
