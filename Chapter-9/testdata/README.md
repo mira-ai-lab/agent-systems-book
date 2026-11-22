@@ -37,7 +37,7 @@ spans_*.jsonl          convert_spans_to_whowhen.py          Who&When/*.json
 
 ## 二、配置环境变量
 
-在 `Automated_FA/.env` 中填写（可参考 `.env.example`）：
+在仓库根目录 `.env` 中填写（与其他章节共用；参考根目录 `.env.example`）：
 
 ```env
 DASHSCOPE_API_KEY=sk-你的DashScope密钥
@@ -52,7 +52,9 @@ INFERENCE_DEVICE=cuda:0
 
 Key 获取：[DashScope 控制台](https://dashscope.console.aliyun.com/)
 
-> **注意：** `.env` 已在 `.gitignore` 中，请勿提交到 Git。
+> **注意：** 仓库根目录 `.env` 已在 `.gitignore` 中，请勿提交到 Git。
+
+> `Automated_FA/.env.example` 是上游 Who&When 代码的原样文件，本章不再单独维护。
 
 使用通义千问 API 时**不需要**配置 `AZURE_OPENAI_*`（那是 GPT 模型用的）。
 
@@ -69,7 +71,7 @@ Key 获取：[DashScope 控制台](https://dashscope.console.aliyun.com/)
 
 **如何设置**
 
-1. 编辑 `Chapter-9/Automated_FA/.env`，增加一行：
+1. 编辑仓库根目录 `.env`，增加一行：
 
    ```env
    FA_REFERENCE_DATE=2026-06-15
@@ -81,7 +83,7 @@ Key 获取：[DashScope 控制台](https://dashscope.console.aliyun.com/)
 
    ```powershell
    cd Chapter-9/Automated_FA
-   python -c "from dotenv import load_dotenv; load_dotenv('.env'); from Lib.time_context import format_time_context_for_eval; print(format_time_context_for_eval())"
+   python -c "from dotenv import find_dotenv, load_dotenv; load_dotenv(find_dotenv()); from Lib.time_context import format_time_context_for_eval; print(format_time_context_for_eval())"
    ```
 
    输出中应包含 `- 今天：2026-06-15`。
@@ -170,7 +172,7 @@ python inference.py `
   --directory_path ../testdata/converted
 ```
 
-API Key 从 `Automated_FA/.env` 自动读取，**无需**在命令行传 `--api_key`。
+API Key 从仓库根目录 `.env` 自动读取，**无需**在命令行传 `--api_key`。
 
 ### 4.2 支持的模型
 
@@ -208,10 +210,10 @@ type outputs\step_by_step_qwen-plus_alg_generated.txt
 
 ```powershell
 # 确认文件存在
-dir D:\myproject\Agents_Failure_Attribution\Automated_FA\.env
+dir <仓库根目录>\.env
 ```
 
-`.env` 中至少要有 `DASHSCOPE_API_KEY=sk-...`。
+仓库根目录 `.env` 中至少要有 `DASHSCOPE_API_KEY=sk-...`。
 
 ### Step 1：转换两条样例轨迹
 
@@ -291,7 +293,7 @@ type outputs\step_by_step_qwen-plus_alg_generated.txt
 
 | 轨迹文件 | 预测 Agent | 预测 Step | 说明 |
 |----------|-----------|-----------|------|
-| `spans_20260615_170343.json` | `Planner.dependency` | 2 | LLM 在 Step 2 判定有错并停止（见下方注意事项） |
+| `spans_20260615_170343.json` | `Orchestrator` | 5 | 第 5 步（Orchestrator）判定为有错后停止（见下方注意事项） |
 | `spans_20260615_180713.json` | `WeatherAgent` | 4 | 与人工分析一致：天气日期范围错误 |
 
 ### Step 4（可选）：评估准确率
@@ -340,9 +342,9 @@ python evaluate.py `
 
 转换后的 JSON 用 `history[i].name` 标识 agent（如 `WeatherAgent`），必须设为 `False`。设为 `True` 时会读 `role` 字段，格式不匹配。
 
-### Q2：step_by_step 为什么没在 WeatherAgent 停就报了 Planner 的错？
+### Q2：step_by_step 为什么在较后的步骤才停止？
 
-`step_by_step` 遇到**第一个** LLM 判为「有错」的步骤就停止。轨迹 1 中 LLM 在 Step 2（Planner.dependency）就给了 Yes，不会继续扫到 Step 4 的 WeatherAgent。对复杂轨迹可改用 `binary_search` 或 `all_at_once`。
+`step_by_step` 遇到**第一个** LLM 判定为「有错」的步骤即停止。轨迹 1 的第 0–4 步均判定为无错，直到第 5 步（Orchestrator）才判定为有错；轨迹 2 在第 4 步（WeatherAgent）停止。对于复杂轨迹，可改用 `binary_search` 或 `all_at_once`。
 
 ### Q3：转换后 history 为空？
 
@@ -371,8 +373,8 @@ python evaluate.py `
 | `testdata/spans_20260615_180713.jsonl` | 样例轨迹 2（多城市旅行） |
 | `testdata/convert_spans_to_whowhen.py` | span JSONL → Who&When JSON |
 | `testdata/converted/*.json` | 转换输出（归因输入） |
-| `Automated_FA/.env` | DashScope API Key、`FA_REFERENCE_DATE` 等配置 |
-| `Automated_FA/.env.example` | 配置模板 |
+| 仓库根目录 `.env` | DashScope API Key、`FA_REFERENCE_DATE` 等配置（与其他章节共用） |
+| `Automated_FA/.env.example` | 上游原样文件，本章不再单独维护 |
 | `Automated_FA/Lib/time_context.py` | 参考日期注入（`FA_REFERENCE_DATE`） |
 | `Automated_FA/inference.py` | 归因入口 |
 | `Automated_FA/outputs/step_by_step_qwen-plus_alg_generated.txt` | 归因输出（实测生成） |
