@@ -1,10 +1,15 @@
-"""
-Convert OpenTelemetry span JSONL traces to Who&When JSON format
-for Automated_FA/inference.py failure attribution.
+"""Convert OpenTelemetry span JSONL traces to Who&When JSON format
+for Automated_FA failure attribution.
+
+This module is the chapter's single span-to-Who&When converter; it is shared
+by the command line entry point and the notebook.
 
 Usage:
     python testdata/convert_spans_to_whowhen.py testdata/spans_20260615_180713.jsonl
     python testdata/convert_spans_to_whowhen.py testdata/spans_*.jsonl -o testdata/converted
+
+:author: zhanghong
+:date: 2026-11-23
 """
 
 from __future__ import annotations
