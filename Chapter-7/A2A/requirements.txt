@@ -1,13 +1,14 @@
 # HTTP/SSE server (Starlette + sse-starlette via a2a-sdk[http-server])
 # 1.x: 用 create_jsonrpc_routes + Starlette，A2AStarletteApplication 已移除
 a2a-sdk[http-server]>=1.0.0
-starlette
-click
-httpx
-uvicorn
-python-dotenv
-langchain
-langchain-openai
-langgraph
-pydantic
+starlette>=0.27.0
+click>=8.0.0
+httpx>=0.25.0
+uvicorn>=0.30.0
+python-dotenv>=1.0.0
+langchain>=1.0.0
+langchain-core>=1.0.0
+langchain-openai>=1.0.0
+langgraph>=1.0.0
+pydantic>=2.0.0
 

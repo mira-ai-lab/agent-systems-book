@@ -1,4 +1,13 @@
-"""Shared configuration for the Chapter-7 MCP server and clients."""
+"""Shared configuration for the Chapter-7 MCP server and clients.
+
+Main capabilities:
+
+- Resolve the server host, port, and Streamable HTTP endpoint.
+- Provide reusable configuration helpers for the server, client, and Notebook.
+
+:author: zhanghong, liuhui
+:date: 2026-11-22
+"""
 
 from __future__ import annotations
 

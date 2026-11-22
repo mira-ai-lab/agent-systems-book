@@ -1,0 +1,47 @@
+{
+  "name": "HotelAgent",
+  "description": "根据城市、位置偏好和每晚预算推荐酒店。",
+  "version": "1.0.0",
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:9012/",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "recommend_hotel",
+      "name": "Recommend hotels",
+      "description": "根据城市、位置偏好和每晚预算检索酒店候选，并给出有字段依据的住宿推荐。",
+      "tags": [
+        "hotel",
+        "recommendation",
+        "travel",
+        "parallel-safe:false",
+        "input:city",
+        "input:preferences",
+        "input:budget_cny_per_night_max",
+        "output:city",
+        "output:hotels",
+        "output:count",
+        "output:data_source"
+      ],
+      "examples": [
+        "推荐一家大同古城附近、预算不超过500元的酒店。"
+      ]
+    }
+  ]
+}

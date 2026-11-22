@@ -1,116 +1,63 @@
-# Hotel Recommendation Agent
+# Chapter-7 A2A
 
-按城市与偏好推荐酒店（百度 Place API / Place Pro 多维检索；未配置 `BAIDU_MAP_AK` 时回退高德）。
+本章把第 6 章的任务规划与酒店能力封装成两个独立的 A2A 服务：
 
-## 环境
+- `TravelPlannerAgent`：复用第 6 章事实调查、任务拆解和依赖分析；
+- `HotelAgent`：复用第 6 章领域智能体与酒店检索工具；
+- `Supervisor`：从零构建 LangGraph Supervisor，并通过 handoff 调用远程 A2A Agent。
 
-```bash
-conda activate agent-systems-book
-pip install -r requirements.txt
-```
+本目录默认把两个服务启动在同一台设备上，以降低教学复现成本。正式部署时，
+服务可以由第三方长期托管，调用方只需配置 URL，无需与 Agent 实现共享进程或
+内部工具接口。
 
-| 配置项 | 位置 | 说明 |
-|--------|------|------|
-| `DEPLOYMENT_NAME` / `CHAT_API_KEY` / `CHAT_ENDPOINT` | 本目录 `.env` 或书根 `.env` | LLM（如 DashScope 兼容模式） |
-| `BAIDU_MAP_AK` | 书根 `.env` | 百度地图 POI；未配置则回退高德 |
+配套 Notebook：
+[`02_a2a_agent_collaboration.ipynb`](../02_a2a_agent_collaboration.ipynb)。
 
-本地快速验证 Agent（不经过 A2A 协议）：
+## 代码结构
 
-```bash
-python agent.py
-```
+| 文件或目录 | 作用 |
+|---|---|
+| `agent_cards/` | 两个 Agent 的公开定义，使用标准 Agent Card JSON |
+| `agents.py` | Planner 与 Hotel 的业务实现，以及规划能力适配 |
+| `server.py` | 公共 Executor、Agent Card 加载、实现选择与 HTTP 装配 |
+| `a2a_client.py` | Agent Card 发现、流式调用与终态校验 |
+| `a2a_models.py` | Planner 请求/响应模型与 Agent Card 能力转换 |
+| `supervisor.py` | 从零构建 LangGraph Supervisor，并通过 handoff 调用远程 A2A Agent |
+| `process_manager.py` | Notebook 使用的同机服务生命周期管理 |
+| `settings.py` | 服务端口与 URL 配置 |
 
-## 启动 A2A 服务
+新增 Agent 时只需：
 
-在本目录执行：
+1. 在 `agents.py` 中实现业务 Agent，并提供可被 `GenericAgentExecutor` 调用的执行方法；
+2. 新增该 Agent 的 Card JSON；
+3. 在 `server.py` 的 `get_agent()` 映射中增加一行。
 
-```bash
-python server.py --host 127.0.0.1 --port 9012
-```
+协议装配、流式映射、HTTP 路由和 CLI 无需重复实现。
 
-成功后会监听 `http://127.0.0.1:9012/`，Agent Card 在：
+## Notebook 内运行
 
-`http://127.0.0.1:9012/.well-known/agent-card.json`
+打开 `02_a2a_agent_collaboration.ipynb` 并依次运行单元格即可。Notebook 会：
 
-## 测试 A2A 是否连通
+1. 为 Planner 与 Hotel 分配空闲端口；
+2. 启动两个同机 A2A 服务；
+3. 发现并展示 Agent Card；
+4. 将远程 Agent 注册给 LangGraph Supervisor；
+5. 通过 Supervisor 调用 Planner 与 Hotel；
+6. 停止本地教学服务。
 
-使用上级目录的 **`check_a2a_call.py`** 作为独立客户端，验证：拉取 Agent Card → 发送消息 → 流式收回复 → 任务进入终态。
-
-**前提**：`server.py` 已在目标地址运行。
-
-```powershell
-# 终端 1：启动服务（见上一节）
-
-# 终端 2：连通性测试（从本 Agent 目录）
-cd ..
-python check_a2a_call.py --base-url http://127.0.0.1:9012/
-```
-
-或从书根目录：
-
-```powershell
-python Chapter-7\A2A\check_a2a_call.py --base-url http://127.0.0.1:9012/
-```
-
-### 常用参数
+## 分终端运行
 
 ```powershell
-# 自定义查询
-python check_a2a_call.py --query "推荐一个大同安静亲子的酒店，预算500/晚"
+uv pip install -r Chapter-7/A2A/requirements.txt
 
-# 打印耗时（首 token、总耗时）
-python check_a2a_call.py --timing
-
-# 远程 Agent
-python check_a2a_call.py --base-url http://10.112.57.99:9012/ --timeout 120
+cd Chapter-7/A2A
+python server.py --agent-card agent_cards/planner_agent.json --port 9011
+python server.py --agent-card agent_cards/hotel_agent.json --port 9012
 ```
 
-### 预期输出
+外部托管服务通过以下变量替换本地地址：
 
-连通正常时大致会看到：
-
+```dotenv
+A2A_PLANNER_URL=https://planner.example.com/
+A2A_HOTEL_URL=https://hotel.example.com/
 ```
-OK: agent-card.json fetched
-agent: HotelRecommendationAgent
-task_state: TASK_STATE_SUBMITTED
-...（流式酒店推荐正文）...
-task_state: TASK_STATE_COMPLETED
-OK: task finished (stream)
-```
-
-退出码：`0` 成功；`2` 连接/调用失败；`3` 超时未完成。
-
-### 常见问题
-
-| 现象 | 处理 |
-|------|------|
-| `create_client error` / 连接拒绝 | 确认 `server.py` 已启动，`--base-url` 与 `--host`/`--port` 一致 |
-| 端口被占用 `[Errno 10048]` | 换端口启动：`server.py --port 9013`，客户端 `--base-url http://127.0.0.1:9013/` |
-| 长时间无输出后超时 | 检查 LLM Key；可加 `--timeout 180` |
-| `hotels` 为空 | 检查书根 `.env` 中 `BAIDU_MAP_AK` |
-
-## LangGraph 调度（supervisor_local.py）
-
-使用 **`langgraph_supervisor.create_supervisor`** 作为调度器，远程 A2A 智能体在 `a2a_agents.py` 的 `A2A_AGENT_SPECS` 中注册（默认仅 hotel）：
-
-```python
-A2A_AGENT_SPECS = [
-    ("hotel_agent", "http://127.0.0.1:9012/", "酒店推荐（A2A）"),
-    # ("weather_agent", "http://127.0.0.1:9013/", "天气查询（A2A）"),
-]
-```
-
-**前提**：`server.py` 已启动；Supervisor 自身需要 LLM（`CHAT_API_KEY` / `DASHSCOPE_API_KEY`）。
-
-```powershell
-# 终端 1：A2A 服务
-python server.py --host 127.0.0.1 --port 9012
-
-# 终端 2：Supervisor 调度
-cd ..
-C:\Users\zhanghong26\.conda\envs\agent-systems-book\python.exe supervisor_local.py
-```
-
-Supervisor 会根据用户意图 handoff 到 `hotel_agent` 等远程 A2A 节点；增删 `A2A_AGENT_SPECS` 即可扩展多个 A2A 服务。
-
-依赖：`pip install langgraph-supervisor`（Chapter-6 requirements 已含）。

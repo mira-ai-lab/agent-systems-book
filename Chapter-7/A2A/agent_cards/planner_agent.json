@@ -1,0 +1,45 @@
+{
+  "name": "TravelPlannerAgent",
+  "description": "完成旅行事实调查、任务拆解、依赖分析，并返回可执行任务计划。",
+  "version": "1.0.0",
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:9011/",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "create_travel_plan",
+      "name": "Create travel task plan",
+      "description": "根据用户请求和已注册的 A2A 智能体能力，生成带依赖关系和执行顺序的任务计划。",
+      "tags": [
+        "travel",
+        "planning",
+        "dependency",
+        "dag",
+        "input:query",
+        "input:available_agents",
+        "output:total_goal",
+        "output:tasks",
+        "output:execution_order"
+      ],
+      "examples": [
+        "为大同两日游制定酒店查询任务，并说明任务依赖。"
+      ]
+    }
+  ]
+}
