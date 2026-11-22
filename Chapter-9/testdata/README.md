@@ -289,12 +289,12 @@ Analysis finished. Output saved to outputs\step_by_step_qwen-plus_alg_generated.
 type outputs\step_by_step_qwen-plus_alg_generated.txt
 ```
 
-**预期关键结果（实测）：**
+**本次运行（2026-11-23）实测结果：**
 
 | 轨迹文件 | 预测 Agent | 预测 Step | 说明 |
 |----------|-----------|-----------|------|
-| `spans_20260615_170343.json` | `Orchestrator` | 5 | 第 5 步（Orchestrator）判定为有错后停止（见下方注意事项） |
-| `spans_20260615_180713.json` | `WeatherAgent` | 4 | 与人工分析一致：天气日期范围错误 |
+| `spans_20260615_170343.json` | `Planner.dependency` | 2 | 模型将 2026-06-15 视为过去日期，判定 Planner 的时间范围错误 |
+| `spans_20260615_180713.json` | `Planner.dependency` | 2 | 模型将 2026-06-15 视为过去日期，判定 Planner 的时间范围错误 |
 
 ### Step 4（可选）：评估准确率
 
@@ -342,9 +342,9 @@ python evaluate.py `
 
 转换后的 JSON 用 `history[i].name` 标识 agent（如 `WeatherAgent`），必须设为 `False`。设为 `True` 时会读 `role` 字段，格式不匹配。
 
-### Q2：step_by_step 为什么在较后的步骤才停止？
+### Q2：step_by_step 为什么在第 2 步就停止？
 
-`step_by_step` 遇到**第一个** LLM 判定为「有错」的步骤即停止。轨迹 1 的第 0–4 步均判定为无错，直到第 5 步（Orchestrator）才判定为有错；轨迹 2 在第 4 步（WeatherAgent）停止。对于复杂轨迹，可改用 `binary_search` 或 `all_at_once`。
+`step_by_step` 遇到**第一个** LLM 判定为「有错」的步骤即停止。本次运行未设置 `FA_REFERENCE_DATE=2026-06-15`，模型以运行当天（2026-11-23）为基准，因此两条轨迹都在第 2 步（Planner.dependency）判定为时间范围错误并停止。若要以轨迹录制日期 2026-06-15 为基准复现，请在仓库根目录 `.env` 中设置 `FA_REFERENCE_DATE=2026-06-15` 后重新运行 Step 2。
 
 ### Q3：转换后 history 为空？
 
