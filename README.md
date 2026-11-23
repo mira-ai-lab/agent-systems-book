@@ -1,6 +1,8 @@
-# agent-systems-book
+# 智能体系统：原理与实践
 
-《智能体系统》配套代码仓库：从单 Agent 推理、记忆与任务规划，到多智能体编排与工程化整合（Chapter-8），MCP / A2A 远程协作，轨迹失败归因（Chapter-9），再到通用多智能体路由平台（Chapter-11）的完整示例。
+> 大模型驱动的个体与群体智能
+
+从「个体如何思考」，到「群体如何协作」，再到「系统如何自我演化」，案例以一条连贯的主线贯穿智能体技术的完整图景，每一章都配有可直接运行的代码。
 
 ## 仓库结构
 
@@ -28,6 +30,12 @@ agent-systems-book/
 │   ├── testdata/         # span JSONL 样本与 convert_spans_to_whowhen.py
 │   ├── Automated_FA/     # inference.py / evaluate.py
 │   └── automated_failure_attribution_eval.ipynb
+├── chapter10/            # 提示词自进化（评测 + TextGrad 两种模式 + rollback）
+│   ├── evaluate.py       # L1 拆解 / L2 路由评测
+│   ├── optimize.py       # direct / planner_graph 后端与编排/保存
+│   ├── planner_graph.py  # 拆解→依赖→路由计算图后端
+│   ├── optimizable_prompts.py  # 待优化的简单拆解/路由提示词
+│   └── travel_prompt_evolution.ipynb  # 入口 notebook
 └── Chapter-11/           # 通用多智能体路由引擎（agent-platform）
     ├── agent_framework/  # Router / 编排 / tracing / optimization SDK
     ├── domains/          # travel（主示例）、demo（插件模板）
@@ -40,32 +48,22 @@ agent-systems-book/
 
 ## 各章内容概览
 
-| 章节 | 主题 | 典型入口 |
+| 章节 | 主题 | 代码入口 |
 |------|------|----------|
-| **Chapter-2** | 思维链预调查、推理链 | `reasoning_chain_of_thought.ipynb` |
-| **Chapter-3** | 文本向量、Chroma 记忆读写 | `memory.ipynb` |
-| **Chapter-4** | 任务分解、依赖图排序 | `task_decomposition_and_planning.ipynb` |
-| **Chapter-5** | `@tool` + LangChain 酒店 Agent | `hotel_recommendation.ipynb` |
-| **Chapter-6** | 中心控制器 + 6 个子智能体 | 见下方「Chapter-6 快速开始」 |
-| **Chapter-7 A2A** | 远程 Agent 协议 + Supervisor 调度 | `A2A/supervisor.py` |
-| **Chapter-7 MCP** | 酒店工具 MCP Server（Streamable HTTP） | `Mcp/server.py` |
-| **Chapter-8** | Ch2–5 能力整合 + LangGraph 固定图 + Tracing | `scripts/run_demo.py --stream` |
-| **Chapter-9** | OpenTelemetry 轨迹 → Who&When → 失败归因 | `testdata/convert_spans_to_whowhen.py` |
-| **Chapter-11** | Router + 域插件 + HTTP API + Web Demo + TextGrad | `scripts/run_demo.py --domain travel --stream` |
+| **Chapter-2** | 思维链推理 | `reasoning_chain_of_thought.ipynb` |
+| **Chapter-3** | 长期记忆与向量检索 | `memory.ipynb` |
+| **Chapter-4** | 任务拆解与依赖排序 | `task_decomposition_and_planning.ipynb` |
+| **Chapter-5** | 单领域 Agent 与工具调用 | `hotel_recommendation.ipynb` |
+| **Chapter-6** | 多智能体中心编排 | `orchestrator.py` |
+| **Chapter-7 A2A** | A2A 远程智能体协作 | `A2A/supervisor.py` |
+| **Chapter-7 MCP** | MCP 工具服务 | `Mcp/server.py` |
+| **Chapter-8** | 工程化整合与可观测性 | `scripts/run_demo.py --stream` |
+| **Chapter-9** | 轨迹转换与失败归因 | `testdata/convert_spans_to_whowhen.py` |
+| **Chapter-10** | 提示词自进化 | `travel_prompt_evolution.ipynb` |
+| **Chapter-11** | 通用多智能体路由平台 | `scripts/run_demo.py --domain travel --stream` |
 
-Chapter-6 整合了前几章能力，是全书的主线 demo；**Chapter-8** 在相同业务能力上提供 **工程化 Python 包**（`travel_multi_agent`）、**OpenTelemetry 可观测性** 与 **书稿离线案例**（`book/`）；Chapter-7 演示 **MCP 工具化** 与 **A2A 服务化** 两种对外协作方式；**Chapter-9** 基于 Chapter-8 导出的 span 轨迹做 **格式转换与 Automated Failure Attribution（AutoFA）**；**Chapter-11** 将 Chapter-8 能力 **平台化** 为通用 Router SDK（`agent_framework` + 域插件），并提供 HTTP API、TypeScript SDK 与 Web Demo。
 
-> **关于书稿第 10 章（自演化 Agent）**  
-> 正文第 10 章讲解 Agent **自演化**（评估反馈、Prompt / 策略迭代与复用等）。本仓库**不设独立 `Chapter-10/` 目录**，该主题已**并入 `Chapter-11/`**，与 Router、编排、benchmark 同一工作区：
->
-> | 书稿概念 | 仓库落点（Chapter-11） |
-> |----------|------------------------|
-> | 自演化 / 优化闭环 | `agent_framework/optimization/`（与生产 LangGraph **并行**的优化轨） |
-> | 基于评测的 Prompt 迭代 | TextGrad + `scripts/travel/eval_*.py` / `optimize_*.py` |
-> | 交互式理解优化流程 | `notebooks/planner_b1_textgrad_graph.ipynb` |
-> | 优化产物持久化 | `data/benchmark/**/optimized/` |
->
-> 安装可选依赖：`pip install -e ".[evolution]"`。详见 [Chapter-11/docs/prompt_evolution.md](Chapter-11/docs/prompt_evolution.md) 与 [Chapter-11/README.md](Chapter-11/README.md) 中「Benchmark 与 Prompt 进化」小节。
+案例沿一条清晰的主线层层递进：从思维链推理出发，引入长期记忆、任务拆解与依赖排序；以单个 Agent 的工具调用为起点，走向多智能体中心编排；经工程化整合与 MCP / A2A 远程协作，进而回望轨迹、定位失败，并让提示词在评测反馈中自我进化，最终沉淀为可复用的通用多智能体路由平台。
 
 ---
 
@@ -215,168 +213,6 @@ Chapter-11 运维向变量全集见 [Chapter-11/docs/operations.md](Chapter-11/d
 
 ---
 
-## Chapter-6 快速开始
-
-Chapter-6 使用一个中心控制器完成预调查、记忆检索、任务拆解、依赖分析、
-子智能体调度和结果聚合。运行入口：
-
-```bash
-python orchestrator.py
-```
-
-子智能体：**Weather · Attraction · Hotel · Restaurant · Flight · Itinerary**
-
-详细说明见 [Chapter-6/README.md](Chapter-6/README.md)。
-
----
-
-## Chapter-8 快速开始
-
-Chapter-8 将 **Chapter-2～5** 能力整合为独立 Python 包 `travel_multi_agent`，采用 **LangGraph 固定图** 编排，并内置 **OpenTelemetry + 结构化日志**。
-
-固定图六步：
-
-```
-pre_survey → retrieve_memory → build_plan → execute_layer → aggregate → save_memory
-```
-
-| 用途 | 命令 |
-|------|------|
-| 查看图结构（无需 API Key） | `cd Chapter-8 && python scripts/show_graph.py` |
-| 完整演示（流式输出，推荐） | `python scripts/run_demo.py --stream` |
-| 完整演示（批量输出） | `python scripts/run_demo.py` |
-| 交互对话 | `python scripts/run_demo.py --stream --chat` |
-| 书稿离线案例（无需 API） | `cd book && python central_agent_demo_short.py` |
-| 书稿扩展案例 | `cd book && python central_agent_demo.py` |
-| 单元测试 | `cd Chapter-8 && pytest` |
-
-子智能体：**Weather · Attraction · Hotel · Restaurant · Flight · Itinerary**（与 Chapter-6 同源能力）
-
-与 Chapter-6 关系：Chapter-6 聚焦中心控制器编排；Chapter-8 将相同业务能力进一步落地为 **固定图工程化实现**（包结构、tracing、测试与书稿案例）。
-
-详细说明见 [Chapter-8/README.md](Chapter-8/README.md)
-
----
-
-## Chapter-7 快速开始
-
-本章两个主 Notebook：
-
-- [Chapter-7/01_mcp_tool_calling.ipynb](Chapter-7/01_mcp_tool_calling.ipynb)：MCP 远程化工具。
-- [Chapter-7/02_a2a_agent_collaboration.ipynb](Chapter-7/02_a2a_agent_collaboration.ipynb)：A2A 远程化智能体。
-
-### A2A：远程 Agent + Supervisor
-
-```powershell
-# 终端 1：启动酒店 A2A 服务
-cd Chapter-7/A2A/hotel_recommendation_agent
-python server.py --host 127.0.0.1 --port 9012
-
-# 终端 2：连通性测试
-cd Chapter-7/A2A
-python check.py --timing
-
-# 终端 3：Supervisor 调度远程 A2A
-python supervisor.py
-```
-
-书稿注释版入口：`Chapter-7/A2A/supervisor_annotated.py`
-
-说明见 [Chapter-7/A2A/README.md](Chapter-7/A2A/README.md)
-
-### MCP：Streamable HTTP 工具服务
-
-```powershell
-cd Chapter-7
-# 打开 01_mcp_tool_calling.ipynb 并按顺序执行
-```
-
-Notebook 会在 Part I 中启动 `server.py` 定义的 MCP Server，并在结束单元关闭服务；脚本版仍可按 `Mcp/README.md` 分终端运行。
-
-说明见 [Chapter-7/Mcp/README.md](Chapter-7/Mcp/README.md)
-
----
-
-## Chapter-9 快速开始
-
-Chapter-9 演示 **OpenTelemetry span 轨迹 → Who&When 格式 → 失败归因（AutoFA）** 全链路，输入可来自 Chapter-8 等多智能体系统导出的 `spans_*.jsonl`。
-
-```powershell
-# 1. 格式转换（仓库内已含示例 span）
-cd Chapter-9/testdata
-python convert_spans_to_whowhen.py spans_20260615_180713.jsonl
-
-# 2. 失败归因（需配置 Automated_FA/.env 中的 DASHSCOPE_API_KEY）
-cd ../Automated_FA
-python inference.py
-
-# 3. 可选：与人工标注对比准确率
-python evaluate.py
-```
-
-交互式全流程见 `automated_failure_attribution_eval.ipynb`。
-
-详细说明见 [Chapter-9/testdata/README.md](Chapter-9/testdata/README.md)
-
----
-
-## Chapter-11 快速开始
-
-Chapter-11 是 **通用多智能体路由引擎（agent-platform）**：`agent_framework/` 与业务域解耦，**travel** 为仓库内完整示例域；整合 Router（L1）与 LangGraph Fixed Graph / Supervisor（L2）。**书稿第 10 章自演化**（Prompt / 策略迭代）亦在本章 `optimization/` 与 TextGrad 脚本中，无独立 `Chapter-10/` 目录。
-
-| 用途 | 命令 |
-|------|------|
-| 完整 CLI（流式，推荐） | `python scripts/run_demo.py --domain travel --profile workflow --stream` |
-| HTTP API | `python scripts/run_api.py`（默认 `8780`） |
-| Web Demo | API + `packages/demo-web` → `npm run dev`（`5173`） |
-| 编排图（无需 Key） | `python scripts/show_graph.py` |
-| 单元测试 | `pytest -m "not integration"` |
-| TextGrad 教程 | `notebooks/planner_b1_textgrad_graph.ipynb` |
-
-```powershell
-cd Chapter-11
-pip install -e ".[api,dev]"
-pip install -e domains/
-
-# CLI 演示
-python scripts/run_demo.py --domain travel --profile workflow --stream
-
-# Web Demo：终端 1 启动 API，终端 2 启动前端
-python scripts/run_api.py
-cd packages\demo-web && npm install && npm run dev
-```
-
-与 Chapter-8 关系：业务能力同源（旅行多 Agent + 固定图流水线）；Chapter-11 增加 **语义 Router**、**域插件协议**、**HTTP / TS SDK**、**benchmark + TextGrad 优化轨** 与 **Web Demo**。
-
-详细说明见 [Chapter-11/README.md](Chapter-11/README.md)
-
----
-
-## 架构演进（全书主线）
-
-```
-Chapter-2  思维链预调查
-    ↓
-Chapter-3  长期记忆检索 / 写入
-    ↓
-Chapter-4  任务拆解 → 依赖排序
-    ↓
-Chapter-5  单 Agent + Tool（酒店）
-    ↓
-Chapter-6  多 Agent 中心控制器编排
-    ↓
-Chapter-8  工程化整合（travel_multi_agent 包 · 固定图 · 可观测性 · 书稿案例）
-    ↓
-Chapter-7  对外协作（MCP 工具协议 · A2A 远程 Agent 协议）
-    ↓
-Chapter-9  轨迹转换 · 失败归因（AutoFA · Who&When）
-    ↓
-Chapter-11 平台化（Router SDK · 域插件 · API · Web Demo · Prompt 进化）
-         ↑ 书稿第 10 章「自演化」并入本章（optimization 轨 · TextGrad · benchmark）
-```
-
----
-
 ## 常见问题
 
 **Q：只配了 `DASHSCOPE_API_KEY`，能跑吗？**  
@@ -397,8 +233,8 @@ A：适配 OpenTelemetry span JSONL（如 `latc.travel-multi-agent` 导出）；
 **Q：模型名写 `qwen3.6-plus` 报错？**  
 A：请改为 `qwen-plus`（或 `.env` 里 `DASHSCOPE_CHAT_MODEL` / `DEPLOYMENT_NAME` 使用百炼控制台实际模型名）。
 
-**Q：书稿第 10 章（自演化 Agent）代码在哪？**  
-A：仓库**无 `Chapter-10/` 目录**。正文自演化主题已并入 **Chapter-11**：`agent_framework/optimization/`、TextGrad 脚本与 `notebooks/planner_b1_textgrad_graph.ipynb`；与主编排并行，产物写入 `data/benchmark/**/optimized/`。见 [prompt_evolution.md](Chapter-11/docs/prompt_evolution.md)。
+**Q：第 10 章（提示词自进化）代码在哪？**  
+A：位于 `chapter10/`，入口 notebook 为 `travel_prompt_evolution.ipynb`；核心模块包括 `evaluate.py`（L1/L2 评测）、`optimize.py`（direct / planner_graph 两种后端）、`planner_graph.py`（计算图后端）与 `optimizable_prompts.py`（待优化的简单提示词）。见 [chapter10/README.md](chapter10/README.md)。
 
 **Q：长期记忆存在哪？**  
 A：Chapter-6 固定使用 Chroma，持久化到 `Chapter-6/chroma_memory/`；Chapter-8 和 Chapter-11 默认也使用各自章节目录下的 `chroma_memory/`，并通过 `MEMORY_BACKEND=store` 切换 LangGraph Store（进程内，重启清空）。
@@ -415,7 +251,8 @@ A：Chapter-6 固定使用 Chroma，持久化到 `Chapter-6/chroma_memory/`；Ch
 | [Chapter-7/A2A/README.md](Chapter-7/A2A/README.md) | A2A 服务、协议测试与 Supervisor |
 | [Chapter-7/Mcp/README.md](Chapter-7/Mcp/README.md) | MCP Server / Client |
 | [Chapter-9/testdata/README.md](Chapter-9/testdata/README.md) | 轨迹转换与 AutoFA 失败归因 |
-| [Chapter-11/README.md](Chapter-11/README.md) | Router SDK、域插件、API、Web Demo、TextGrad（含书稿第 10 章自演化） |
+| [chapter10/README.md](chapter10/README.md) | 提示词自进化（评测 + TextGrad 两种模式 + rollback） |
+| [Chapter-11/README.md](Chapter-11/README.md) | Router SDK、域插件、API、Web Demo、TextGrad |
 | [Chapter-11/docs/prompt_evolution.md](Chapter-11/docs/prompt_evolution.md) | Prompt 进化 / TextGrad / benchmark 优化轨 |
 | [Chapter-11/tests/README.md](Chapter-11/tests/README.md) | 测试模块与 phase 对照 |
 | [Chapter-11/docs/](Chapter-11/docs/) | SDK 集成、Router、编排、插件开发等设计文档 |
