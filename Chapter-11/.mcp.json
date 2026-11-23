@@ -2,9 +2,9 @@
   "mcpServers": {
     "travel-agent": {
       "type": "stdio",
-      "command": "D:\\conda\\python.exe",
+      "command": "E:\\Book\\agent-systems-book\\.venv\\Scripts\\python.exe",
       "args": [
-        "scripts/travel_agent_mcp_server.py"
+        "Chapter-11/travel_agent_server.py"
       ]
     }
   }

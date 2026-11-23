@@ -1,3 +1,0 @@
-event: final
-data: {"type":"final","stage":"done","data":{"final_response":"ok","resolved_domain":"travel"}}
-
