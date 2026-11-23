@@ -224,6 +224,31 @@ async def invoke_chat(
     return text
 
 
+def invoke_chat_sync(
+    llm: Any,
+    prompt: str,
+    *,
+    system_prompt: str | None = None,
+    json_mode: bool = False,
+) -> str:
+    """Invoke one synchronous chat request and return response text."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    messages: list[Any] = []
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=prompt))
+
+    kwargs: dict[str, Any] = {}
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    response = llm.invoke(messages, **kwargs)
+    text = extract_response_text(response)
+    if not text:
+        raise ValueError("The model returned an empty response.")
+    return text
+
+
 async def invoke_json(
     llm: Any,
     prompt: str,
